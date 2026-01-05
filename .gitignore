@@ -1,0 +1,72 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Linker files
+*.ilk
+
+# Debugger Files
+*.pdb
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+
+# debug information files
+*.dwo
+
+# logs
+logs/
+
+# Build Directories
+build/
+bin/
+lib/
+cmake-build-*/
+
+# Temporary Files
+*.swp
+*.swo
+*~
+.DS_Store
+*.log
+*.tmp
+.cache/
+*.pdf
+*.png
+*.dot
+*.json
+*.html
+
+# Ignore 
+!docs/images/*.png
+!docs/examples/*.html
+
+# Licensed/Commercial Dependencies (use local copies only)
+reference/snopt7.7.7/

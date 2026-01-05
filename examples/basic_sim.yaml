@@ -1,0 +1,22 @@
+# Hermes Configuration - Basic Icarus Simulation
+#
+# This configuration runs a single Icarus simulation with
+# telemetry streaming to connected Daedalus clients.
+
+version: "0.2"
+
+modules:
+  icarus:
+    adapter: icarus
+    config: ./icarus_config.yaml
+    # lib_path: /path/to/libicarus.so  # Optional, auto-detected
+
+execution:
+  mode: afap           # "afap", "realtime", or "paused"
+  rate_hz: 100.0       # Simulation rate
+  end_time: 60.0       # Run for 60 seconds
+
+server:
+  host: "0.0.0.0"
+  port: 8765
+  telemetry_hz: 60.0   # Decimated telemetry rate

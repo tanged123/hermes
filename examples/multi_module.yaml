@@ -1,0 +1,49 @@
+# Hermes Configuration - Multi-Module with Wiring
+#
+# This configuration demonstrates:
+# - Multiple modules (Icarus + signal injection)
+# - Signal wiring between modules
+# - Gain/offset transformations
+
+version: "0.2"
+
+modules:
+  icarus:
+    adapter: icarus
+    config: ./icarus_config.yaml
+
+  injection:
+    adapter: injection
+    signals:
+      - disturbance.force.x
+      - disturbance.force.y
+      - disturbance.force.z
+      - disturbance.torque.x
+      - disturbance.torque.y
+      - disturbance.torque.z
+
+wiring:
+  # Inject disturbance forces into Icarus
+  - src: injection.disturbance.force.x
+    dst: icarus.Environment.external_force.x
+
+  - src: injection.disturbance.force.y
+    dst: icarus.Environment.external_force.y
+
+  - src: injection.disturbance.force.z
+    dst: icarus.Environment.external_force.z
+
+  # Example with unit conversion (N to mN)
+  # - src: gnc.control.thrust_cmd
+  #   dst: icarus.Thruster.command
+  #   gain: 1000.0
+
+execution:
+  mode: afap
+  rate_hz: 100.0
+  end_time: 120.0
+
+server:
+  host: "0.0.0.0"
+  port: 8765
+  telemetry_hz: 60.0
