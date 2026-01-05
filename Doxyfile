@@ -15,4 +15,3 @@ WARN_IF_UNDOCUMENTED   = NO
 
 # Python-specific settings (modern Doxygen has native Python support)
 EXTENSION_MAPPING      = py=Python
-OPTIMIZE_OUTPUT_JAVA   = YES
