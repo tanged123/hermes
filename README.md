@@ -1,4 +1,4 @@
-# Hermes
+# Hermes ⚚
 
 [![Hermes CI](https://github.com/tanged123/hermes/actions/workflows/ci.yml/badge.svg)](https://github.com/tanged123/hermes/actions/workflows/ci.yml)
 [![Format Check](https://github.com/tanged123/hermes/actions/workflows/format.yml/badge.svg)](https://github.com/tanged123/hermes/actions/workflows/format.yml)
@@ -159,10 +159,12 @@ nix build
 Hermes uses a two-channel WebSocket protocol:
 
 **Control Channel (JSON):**
+
 - Schema on connect
 - Commands: pause, resume, reset, step, set, subscribe
 
 **Telemetry Channel (Binary):**
+
 - 16-byte header: frame (u32) + time (f64) + count (u16) + reserved
 - Payload: signal values as f64 array
 
