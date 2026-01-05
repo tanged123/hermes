@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -eo pipefail
 
 # Ensure we are in a Nix environment
 if [ -z "$IN_NIX_SHELL" ]; then

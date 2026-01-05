@@ -39,22 +39,31 @@ EOF
     exit 0
 }
 
-for arg in "$@"; do
-    case $arg in
+while [ $# -gt 0 ]; do
+    case "$1" in
         -h|--help)
             show_help
             ;;
         -v|--verbose)
             VERBOSE=true
+            shift
             ;;
         --coverage)
             COVERAGE=true
+            shift
             ;;
         -m|--marker)
             shift
+            if [ $# -eq 0 ] || [ -z "$1" ]; then
+                echo "Error: -m/--marker requires an argument" >&2
+                exit 1
+            fi
             MARKER="$1"
+            shift
             ;;
         *)
+            echo "Warning: Unknown argument ignored: $1" >&2
+            shift
             ;;
     esac
 done

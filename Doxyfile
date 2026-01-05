@@ -13,7 +13,6 @@ EXTRACT_PRIVATE        = NO
 EXTRACT_STATIC         = YES
 WARN_IF_UNDOCUMENTED   = NO
 
-# Python-specific settings
+# Python-specific settings (modern Doxygen has native Python support)
 EXTENSION_MAPPING      = py=Python
-FILTER_PATTERNS        = *.py="python -m doxypy"
 OPTIMIZE_OUTPUT_JAVA   = YES

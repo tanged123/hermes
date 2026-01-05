@@ -75,8 +75,7 @@ hermes schema examples/basic_sim.yaml
 
 ```bash
 nix build              # Build hermes package
-nix develop            # Enter development shell
-nix develop .#python   # Shell with pre-built icarus bindings
+nix develop            # Enter development shell (includes icarus bindings)
 ```
 
 ### Using as a Dependency

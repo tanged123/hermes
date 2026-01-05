@@ -3,19 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from hermes.core.signal import SignalDescriptor, SignalType
-
-if TYPE_CHECKING:
-    pass
 
 
 class IcarusAdapter:
     """Adapter for Icarus 6DOF simulation via pybind11 bindings.
 
     This adapter wraps the Icarus Python bindings (built with pybind11)
-    to provide a ModuleAdapter interface for Hermes orchestration.
+    for use with the Hermes SignalBus. It implements the standard adapter
+    contract: name, signals, stage(), step(), reset(), get(), set(), close().
 
     Example:
         adapter = IcarusAdapter("icarus", "config.yaml")
