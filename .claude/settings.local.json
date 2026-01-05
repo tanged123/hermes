@@ -9,7 +9,11 @@
       "Bash(bd create:*)",
       "Bash(bd dep tree:*)",
       "Bash(bd blocked)",
-      "Bash(bd sync:*)"
+      "Bash(bd sync:*)",
+      "Bash(bd update:*)",
+      "Bash(bd dep remove:*)",
+      "Bash(bd dep add:*)",
+      "Bash(bd ready:*)"
     ]
   }
 }

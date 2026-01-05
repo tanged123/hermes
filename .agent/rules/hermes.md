@@ -8,13 +8,19 @@ You are an advanced AI coding assistant working on **Hermes**, a Simulation Orch
 
 ## Project Overview
 
-Hermes is middleware that orchestrates simulation modules, routes signals between them, and serves telemetry to visualization clients. It sits between physics engines like Icarus and visualization tools like Daedalus.
+Hermes is a **multi-process simulation framework** that orchestrates simulation modules, routes signals between them, and serves telemetry to visualization clients. It sits between physics engines like Icarus and visualization tools like Daedalus.
 
-**Key Concepts:**
-- **SignalBus**: Routes signals between modules via wiring configuration
-- **ModuleAdapter**: Protocol for wrapping simulation modules (Icarus, injection, script)
-- **Scheduler**: Executes synchronous simulation loops at configurable rates
+**Core Components:**
+- **Execute/Core/Wrapper**: Process lifecycle management (load, init, schedule, terminate)
+- **Data Backplane**: POSIX IPC (shared memory, semaphores, pipes) for inter-module communication
+- **Scripting Infrastructure**: Python API for injection/inspection
 - **WebSocket Server**: Serves telemetry to Daedalus clients
+
+**Key Principles:**
+- **Process Isolation**: Each module runs as a separate process
+- **Language Agnostic**: Modules can be written in C, C++, Python, Rust, etc.
+- **IPC-First**: All inter-module communication via POSIX IPC primitives
+- **YAML Configuration**: First-class citizen, no recompile needed
 
 ## On Start - Required Reading
 
@@ -109,22 +115,34 @@ def get(self, signal: str) -> float:
     return self._sim.get(signal)  # mypy: Returning Any
 ```
 
-### 2. Adapter Contract (MANDATORY)
+### 2. Module Protocol (MANDATORY)
 
-All module adapters MUST implement these methods:
+Modules (in any language) must implement these lifecycle methods:
 
 ```python
-@property
-def name(self) -> str: ...
-@property
-def signals(self) -> dict[str, SignalDescriptor]: ...
+# Python module interface
+def init(config_path: str, shm_name: str) -> int: ...  # 0 = success
+def stage() -> int: ...
+def step(dt: float) -> int: ...
+def reset() -> int: ...
+def terminate() -> None: ...
+def get_signal(name: str) -> float: ...
+def set_signal(name: str, value: float) -> None: ...
+def list_signals() -> list[str]: ...
+```
 
-def stage(self) -> None: ...
-def step(self, dt: float) -> None: ...
-def reset(self) -> None: ...
-def get(self, signal: str) -> float: ...
-def set(self, signal: str, value: float) -> None: ...
-def close(self) -> None: ...
+```c
+// C module interface (include/hermes/module.h)
+typedef struct {
+    int (*init)(const char* config_path, const char* shm_name);
+    int (*stage)(void);
+    int (*step)(double dt);
+    int (*reset)(void);
+    void (*terminate)(void);
+    double (*get_signal)(const char* name);
+    void (*set_signal)(const char* name, double value);
+    const char** (*list_signals)(void);
+} hermes_module_t;
 ```
 
 ### 3. Signal Naming Convention
@@ -159,28 +177,37 @@ await self._scheduler.run(callback=callback)
 
 ```
 src/hermes/
-├── core/           # Core abstractions
-│   ├── module.py   # ModuleAdapter protocol
-│   ├── signal.py   # SignalDescriptor, SignalBus, Wire
-│   ├── scheduler.py # Synchronous scheduler
-│   └── config.py   # Pydantic configuration models
+├── core/              # Execute/Core/Wrapper
+│   ├── process.py     # Process lifecycle management
+│   ├── scheduler.py   # Runtime scheduling
+│   └── config.py      # Pydantic configuration models
 │
-├── adapters/       # Module adapters
-│   ├── icarus.py   # IcarusAdapter (pybind11)
-│   ├── injection.py # InjectionAdapter (test signals)
-│   └── script.py   # ScriptAdapter (Python modules)
+├── backplane/         # Data Backplane
+│   ├── shm.py         # Shared memory management
+│   ├── signals.py     # Signal registry and routing
+│   └── sync.py        # Semaphores and synchronization
 │
-├── server/         # WebSocket server
-│   ├── protocol.py # Message types, serialization
-│   ├── telemetry.py # Binary telemetry encoder
-│   └── websocket.py # WebSocket server (asyncio)
+├── protocol/          # Module protocol definitions
+│   ├── messages.py    # IPC message formats
+│   └── module.py      # Module interface specification
 │
-└── cli/            # Command-line interface
-    └── main.py     # Entry point
+├── scripting/         # Scripting infrastructure
+│   └── api.py         # Python injection/inspection API
+│
+├── server/            # WebSocket server (Phase 2)
+│   ├── protocol.py    # Message types, serialization
+│   ├── telemetry.py   # Binary telemetry encoder
+│   └── websocket.py   # WebSocket server (asyncio)
+│
+└── cli/               # Command-line interface
+    └── main.py        # Entry point
 
-tests/              # Test suite (mirrors src structure)
-examples/           # Example configurations
-docs/               # Documentation
+include/hermes/        # C headers for native modules
+└── module.h           # Module protocol in C
+
+tests/                 # Test suite (mirrors src structure)
+examples/              # Example configurations
+docs/                  # Documentation
 ```
 
 ## Workflow Commands
@@ -208,20 +235,21 @@ hermes run config.yaml    # Run simulation
 
 ## Key Dependencies
 
-- **icarus**: 6DOF simulation engine (pybind11 bindings via Nix)
-- **websockets**: Async WebSocket server
+- **posix-ipc**: POSIX shared memory and semaphores
 - **pydantic**: Configuration validation
 - **structlog**: Structured logging
 - **numpy**: Signal array operations
 - **click**: CLI framework
+- **websockets**: Async WebSocket server (Phase 2)
 
 ## Quick Reference
 
 | Need | Use |
 |:-----|:----|
 | Type cast for Any | `cast(float, value)` from typing |
-| Signal bus access | `bus.get("module.signal")` |
+| Signal access (shared memory) | `shm.get_signal("module.signal")` |
 | Qualified name parse | `module, signal = name.split(".", 1)` |
-| Async WebSocket | `async with serve(handler, host, port)` |
-| Binary telemetry | `struct.pack("<I d H H", frame, time, count, 0)` |
+| Shared memory attach | `posix_ipc.SharedMemory(name)` |
+| Semaphore create | `posix_ipc.Semaphore(name, flags=posix_ipc.O_CREAT)` |
 | Config loading | `HermesConfig.from_yaml(path)` |
+| Binary telemetry | `struct.pack("<I Q d I", magic, frame, time, count)` |
