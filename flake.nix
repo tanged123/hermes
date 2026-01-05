@@ -68,7 +68,7 @@
         # Hermes package
         hermesPackage = pkgs.python3Packages.buildPythonPackage {
           pname = "hermes";
-          version = "0.1.0";
+          version = "0.1.1";
           src = ./.;
           format = "pyproject";
 

@@ -1,6 +1,6 @@
 """Hermes - Simulation Orchestration Platform."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from hermes.core.config import HermesConfig
 from hermes.core.module import ModuleAdapter
