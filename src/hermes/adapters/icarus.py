@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from hermes.core.signal import SignalDescriptor, SignalType
 
 if TYPE_CHECKING:
-    from hermes.core.module import ModuleAdapter
+    pass
 
 
 class IcarusAdapter:

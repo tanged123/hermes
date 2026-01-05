@@ -1,0 +1,19 @@
+PROJECT_NAME           = "Hermes"
+PROJECT_BRIEF          = "System Test and Execution Platform for Aerospace Simulation"
+OUTPUT_DIRECTORY       = build/docs
+INPUT                  = README.md src docs
+RECURSIVE              = YES
+FILE_PATTERNS          = *.py *.md
+USE_MDFILE_AS_MAINPAGE = README.md
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+HAVE_DOT               = YES
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+WARN_IF_UNDOCUMENTED   = NO
+
+# Python-specific settings
+EXTENSION_MAPPING      = py=Python
+FILTER_PATTERNS        = *.py="python -m doxypy"
+OPTIMIZE_OUTPUT_JAVA   = YES

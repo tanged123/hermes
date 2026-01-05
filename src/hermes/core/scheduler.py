@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Callable, Coroutine, Any
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from hermes.core.signal import SignalBus

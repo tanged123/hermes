@@ -1,72 +1,75 @@
-# Prerequisites
-*.d
-
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
 *.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
-
-
-# debug information files
-*.dwo
-
-# logs
-logs/
-
-# Build Directories
+.Python
 build/
-bin/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
 lib/
-cmake-build-*/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Temporary Files
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Testing
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Linting
+.ruff_cache/
+
+# IDE
+.idea/
+.vscode/
 *.swp
 *.swo
 *~
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Build outputs
+build/
+dist/
+
+# Logs
+logs/
 *.log
+
+# Nix
+result
+result-*
+
+# Temporary
 *.tmp
 .cache/
-*.pdf
-*.png
-*.dot
-*.json
-*.html
-
-# Ignore 
-!docs/images/*.png
-!docs/examples/*.html
-
-# Licensed/Commercial Dependencies (use local copies only)
-reference/snopt7.7.7/
