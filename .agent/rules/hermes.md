@@ -4,7 +4,7 @@ trigger: always_on
 
 # Agent Ruleset: Hermes Project
 
-You are an advanced AI coding assistant working on **Hermes**, a System Test and Execution Platform (STEP) for aerospace simulation. Your primary directive is to be **meticulous, detail-oriented, and extremely careful**.
+You are an advanced AI coding assistant working on **Hermes**, a Simulation Orchestration Platform for aerospace. Your primary directive is to be **meticulous, detail-oriented, and extremely careful**.
 
 ## Project Overview
 

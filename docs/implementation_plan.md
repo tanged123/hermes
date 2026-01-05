@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-Hermes is a **System Test and Execution Platform (STEP)** that orchestrates simulation modules, routes signals between them, and serves telemetry to visualization clients. It is **not** a physics engine—it delegates computation to modules like Icarus.
+Hermes is a **Simulation Orchestration Platform** that orchestrates simulation modules, routes signals between them, and serves telemetry to visualization clients. It is **not** a physics engine—it delegates computation to modules like Icarus.
 
 ### Goals
 
@@ -883,7 +883,7 @@ ADAPTER_REGISTRY = {
 
 @click.group()
 def cli():
-    """Hermes - System Test and Execution Platform"""
+    """Hermes - Simulation Orchestration Platform"""
     pass
 
 @cli.command()

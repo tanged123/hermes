@@ -5,7 +5,7 @@
 [![codecov](https://codecov.io/github/tanged123/hermes/graph/badge.svg)](https://codecov.io/github/tanged123/hermes)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://tanged123.github.io/hermes/)
 
-**System Test and Execution Platform (STEP) for Aerospace Simulation**
+**Simulation Orchestration Platform for Aerospace**
 
 Hermes orchestrates simulation modules, routes signals between them, and serves telemetry to visualization clients. It is the middleware layer between physics engines like Icarus and visualization tools like Daedalus.
 
@@ -13,7 +13,7 @@ Hermes orchestrates simulation modules, routes signals between them, and serves 
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    HERMES (STEP)                        │
+│                       HERMES                            │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐              │
 │  │  Icarus  │  │  GNC SW  │  │ Injection│              │
 │  │ Adapter  │  │ Adapter  │  │ Adapter  │              │

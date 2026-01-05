@@ -1,5 +1,5 @@
 PROJECT_NAME           = "Hermes"
-PROJECT_BRIEF          = "System Test and Execution Platform for Aerospace Simulation"
+PROJECT_BRIEF          = "Simulation Orchestration Platform for Aerospace"
 OUTPUT_DIRECTORY       = build/docs
 INPUT                  = README.md src docs
 RECURSIVE              = YES

@@ -1,5 +1,5 @@
 {
-  description = "Hermes: System Test and Execution Platform";
+  description = "Hermes: Simulation Orchestration Platform";
 
   nixConfig = {
     extra-substituters = [ "https://tanged123.cachix.org" ];

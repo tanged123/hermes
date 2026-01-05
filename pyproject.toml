@@ -1,7 +1,7 @@
 [project]
 name = "hermes"
 version = "0.1.0"
-description = "System Test and Execution Platform for aerospace simulation"
+description = "Simulation Orchestration Platform for aerospace"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
