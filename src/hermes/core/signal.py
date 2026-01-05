@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from hermes.core.module import ModuleAdapter
@@ -135,7 +135,7 @@ class SignalBus:
         module_name, signal_name = self._parse_qualified(qualified_name)
         self._modules[module_name].set(signal_name, value)
 
-    def get_schema(self) -> dict:
+    def get_schema(self) -> dict[str, Any]:
         """Return full schema for all modules.
 
         Returns a dictionary suitable for JSON serialization containing

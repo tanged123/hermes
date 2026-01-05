@@ -84,7 +84,7 @@ disallow_untyped_defs = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["cffi.*", "websockets.*"]
+module = ["cffi.*", "websockets.*", "icarus.*", "yaml.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
