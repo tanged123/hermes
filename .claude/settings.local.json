@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Bash(mypy:*)",
-      "Bash(nix develop:*)"
+      "Bash(nix develop:*)",
+      "Bash(mkdir:*)",
+      "Skill(beads:list)",
+      "Bash(bd list:*)",
+      "Bash(bd create:*)",
+      "Bash(bd dep tree:*)",
+      "Bash(bd blocked)",
+      "Bash(bd sync:*)"
     ]
   }
 }
