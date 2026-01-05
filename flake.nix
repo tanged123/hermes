@@ -1,5 +1,5 @@
 {
-  description = "Hermes: System Test and Execution Platform";
+  description = "Hermes: Simulation Orchestration Platform";
 
   nixConfig = {
     extra-substituters = [ "https://tanged123.cachix.org" ];
@@ -13,12 +13,9 @@
     flake-utils.url = "github:numtide/flake-utils";
     treefmt-nix.url = "github:numtide/treefmt-nix";
 
-    # Icarus simulation engine
+    # Icarus simulation engine (provides Python bindings)
     icarus = {
-      # For CI/production:
-      # url = "github:tanged123/icarus";
-      # For local development:
-      url = "path:/home/tanged/sources/icarus";
+      url = "github:tanged123/icarus";
     };
   };
 
@@ -35,24 +32,30 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        # Get Icarus package (includes Python bindings)
-        icarusPackage = icarus.packages.${system}.default;
+        # Get Icarus Python bindings
+        # TODO: Change to icarus.packages.${system}.python once Icarus
+        # implements nix_python_bindings.md plan
+        icarusPython = icarus.packages.${system}.python or null;
 
-        # Python environment with Hermes dependencies + Icarus
-        pythonEnv = pkgs.python3.withPackages (ps: [
-          ps.websockets
-          ps.pyyaml
-          ps.pydantic
-          ps.structlog
-          ps.numpy
-          ps.click
-          # Testing
-          ps.pytest
-          ps.pytest-asyncio
-          ps.pytest-cov
-          # Dev tools
-          ps.mypy
-        ]);
+        # Python environment with Hermes dependencies
+        pythonEnv = pkgs.python3.withPackages (
+          ps:
+          [
+            ps.websockets
+            ps.pyyaml
+            ps.pydantic
+            ps.structlog
+            ps.numpy
+            ps.click
+            # Testing
+            ps.pytest
+            ps.pytest-asyncio
+            ps.pytest-cov
+            # Dev tools
+            ps.mypy
+          ]
+          ++ (if icarusPython != null then [ icarusPython ] else [ ])
+        );
 
         # Treefmt configuration
         treefmtEval = treefmt-nix.lib.evalModule pkgs {
@@ -65,7 +68,7 @@
         # Hermes package
         hermesPackage = pkgs.python3Packages.buildPythonPackage {
           pname = "hermes";
-          version = "0.1.0";
+          version = "0.1.1";
           src = ./.;
           format = "pyproject";
 
@@ -80,12 +83,8 @@
             pkgs.python3Packages.structlog
             pkgs.python3Packages.numpy
             pkgs.python3Packages.click
-          ];
-
-          # Icarus bindings are loaded at runtime
-          makeWrapperArgs = [
-            "--prefix PYTHONPATH : ${icarusPackage}/lib/python3.12/site-packages"
-          ];
+          ]
+          ++ (if icarusPython != null then [ icarusPython ] else [ ]);
 
           doCheck = false; # Tests require Icarus at runtime
         };
@@ -99,20 +98,27 @@
         devShells.default = pkgs.mkShell {
           packages = [
             pythonEnv
-            icarusPackage
             pkgs.ruff
+            pkgs.doxygen
+            pkgs.graphviz
             treefmtEval.config.build.wrapper
           ];
 
           shellHook = ''
-            # Add Icarus Python bindings to path
-            export PYTHONPATH="${icarusPackage}/lib/python3.12/site-packages:$PYTHONPATH"
-
             # Add local src to path for development
             export PYTHONPATH="$PWD/src:$PYTHONPATH"
 
             echo "Hermes dev environment loaded"
-            echo "  - Icarus: ${icarusPackage.version or "dev"}"
+            ${
+              if icarusPython != null then
+                ''
+                  echo "  - Icarus: available"
+                ''
+              else
+                ''
+                  echo "  - Icarus: NOT AVAILABLE (implement icarus nix_python_bindings.md)"
+                ''
+            }
             echo "  - Python: ${pythonEnv.python.version}"
           '';
         };

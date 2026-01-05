@@ -3,19 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any, cast
 
 from hermes.core.signal import SignalDescriptor, SignalType
-
-if TYPE_CHECKING:
-    from hermes.core.module import ModuleAdapter
 
 
 class IcarusAdapter:
     """Adapter for Icarus 6DOF simulation via pybind11 bindings.
 
     This adapter wraps the Icarus Python bindings (built with pybind11)
-    to provide a ModuleAdapter interface for Hermes orchestration.
+    for use with the Hermes SignalBus. It implements the standard adapter
+    contract: name, signals, stage(), step(), reset(), get(), set(), close().
 
     Example:
         adapter = IcarusAdapter("icarus", "config.yaml")
@@ -71,7 +69,7 @@ class IcarusAdapter:
         return self._signals
 
     @property
-    def simulator(self):
+    def simulator(self) -> Any:
         """Access to underlying Icarus Simulator (for advanced use)."""
         return self._sim
 
@@ -111,7 +109,7 @@ class IcarusAdapter:
             KeyError: If signal not found
         """
         try:
-            return self._sim.get(signal)
+            return cast(float, self._sim.get(signal))
         except self._icarus.SignalNotFoundError as e:
             raise KeyError(f"Signal not found: {signal}") from e
 
@@ -143,12 +141,12 @@ class IcarusAdapter:
 
     def get_time(self) -> float:
         """Get current simulation time (MET)."""
-        return self._sim.time
+        return cast(float, self._sim.time)
 
     def close(self) -> None:
         """Release resources."""
         # Python GC handles cleanup
-        self._sim = None  # type: ignore
+        self._sim = None
 
     def _build_signals(self) -> None:
         """Build signal descriptors from Icarus schema."""

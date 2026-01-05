@@ -26,10 +26,9 @@ class InjectionAdapter:
             signals: List of signal names to create
         """
         self._name = name
-        self._values: dict[str, float] = {s: 0.0 for s in signals}
+        self._values: dict[str, float] = dict.fromkeys(signals, 0.0)
         self._signals = {
-            s: SignalDescriptor(name=s, type=SignalType.SCALAR, writable=True)
-            for s in signals
+            s: SignalDescriptor(name=s, type=SignalType.SCALAR, writable=True) for s in signals
         }
 
     @property
@@ -52,7 +51,7 @@ class InjectionAdapter:
 
     def reset(self) -> None:
         """Reset all values to zero."""
-        self._values = {s: 0.0 for s in self._values}
+        self._values = dict.fromkeys(self._values, 0.0)
 
     def get(self, signal: str) -> float:
         """Get signal value.

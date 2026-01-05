@@ -1,6 +1,11 @@
-# Hermes
+# Hermes ⚚
 
-**System Test and Execution Platform (STEP) for Aerospace Simulation**
+[![Hermes CI](https://github.com/tanged123/hermes/actions/workflows/ci.yml/badge.svg)](https://github.com/tanged123/hermes/actions/workflows/ci.yml)
+[![Format Check](https://github.com/tanged123/hermes/actions/workflows/format.yml/badge.svg)](https://github.com/tanged123/hermes/actions/workflows/format.yml)
+[![codecov](https://codecov.io/github/tanged123/hermes/graph/badge.svg)](https://codecov.io/github/tanged123/hermes)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://tanged123.github.io/hermes/)
+
+**Simulation Orchestration Platform for Aerospace**
 
 Hermes orchestrates simulation modules, routes signals between them, and serves telemetry to visualization clients. It is the middleware layer between physics engines like Icarus and visualization tools like Daedalus.
 
@@ -8,17 +13,17 @@ Hermes orchestrates simulation modules, routes signals between them, and serves 
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    HERMES (STEP)                        │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐              │
-│  │  Icarus  │  │  GNC SW  │  │ Injection│              │
-│  │ Adapter  │  │ Adapter  │  │ Adapter  │              │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘              │
-│       └─────────────┴─────────────┘                    │
+│                       HERMES                            │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
+│  │  Icarus  │  │  GNC SW  │  │ Injection│               │
+│  │ Adapter  │  │ Adapter  │  │ Adapter  │               │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘               │
+│       └─────────────┴─────────────┘                     │
 │              Signal Bus (routing)                       │
-│                      │                                 │
-│         ┌───────────┴───────────┐                      │
-│         │  WebSocket Server     │                      │
-│         └───────────────────────┘                      │
+│                      │                                  │
+│         ┌───────────┴───────────┐                       │
+│         │  WebSocket Server     │                       │
+│         └───────────────────────┘                       │
 └─────────────────────────────────────────────────────────┘
                        │
               ┌────────┴────────┐
@@ -26,33 +31,34 @@ Hermes orchestrates simulation modules, routes signals between them, and serves 
               └─────────────────┘
 ```
 
-## Installation (Nix)
-
-Hermes uses Nix flakes for reproducible development. The flake takes Icarus
-as an input, providing the pybind11 Python bindings automatically.
-
-```bash
-# Enter development shell
-nix develop
-
-# Or with direnv (recommended)
-echo "use flake" > .envrc
-direnv allow
-```
-
-The dev shell includes:
-- Python 3.11+ with all dependencies
-- Icarus Python bindings (pybind11)
-- ruff, mypy, pytest
-
-### Without Nix
-
-```bash
-# Ensure Icarus Python bindings are installed and in PYTHONPATH
-pip install -e ".[dev]"
-```
-
 ## Quick Start
+
+Hermes uses Nix for reproducible builds. Install [Nix](https://nixos.org/download.html) first.
+
+```bash
+# Enter development environment
+./scripts/dev.sh
+
+# Run tests
+./scripts/test.sh
+
+# Run CI (lint + typecheck + tests)
+./scripts/ci.sh
+
+# Run with coverage
+./scripts/coverage.sh
+
+# Generate documentation
+./scripts/generate_docs.sh
+
+# Clean build artifacts
+./scripts/clean.sh
+
+# Install pre-commit hooks (auto-format on commit)
+./scripts/install-hooks.sh
+```
+
+### Using Hermes
 
 ```bash
 # Run simulation from config file
@@ -63,6 +69,33 @@ hermes run examples/basic_sim.yaml --no-server
 
 # Print schema JSON
 hermes schema examples/basic_sim.yaml
+```
+
+### Nix Packages
+
+```bash
+nix build              # Build hermes package
+nix develop            # Enter development shell (includes icarus bindings)
+```
+
+### Using as a Dependency
+
+```nix
+{
+  inputs.hermes.url = "github:tanged123/hermes";
+
+  outputs = { self, nixpkgs, hermes, ... }:
+    let
+      pkgs = nixpkgs.legacyPackages.x86_64-linux;
+      hermesPkg = hermes.packages.x86_64-linux.default;
+    in {
+      devShells.default = pkgs.mkShell {
+        packages = [
+          (pkgs.python3.withPackages (ps: [ hermesPkg ]))
+        ];
+      };
+    };
+}
 ```
 
 ## Configuration
@@ -126,10 +159,12 @@ nix build
 Hermes uses a two-channel WebSocket protocol:
 
 **Control Channel (JSON):**
+
 - Schema on connect
 - Commands: pause, resume, reset, step, set, subscribe
 
 **Telemetry Channel (Binary):**
+
 - 16-byte header: frame (u32) + time (f64) + count (u16) + reserved
 - Payload: signal values as f64 array
 

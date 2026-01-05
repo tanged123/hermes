@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from hermes.core.signal import SignalBus, SignalDescriptor, SignalType
-from hermes.core.module import ModuleAdapter
 
 
 class MockAdapter:
@@ -19,8 +18,7 @@ class MockAdapter:
         self._name = name
         self._values: dict[str, float] = signals or {}
         self._signals = {
-            name: SignalDescriptor(name=name, type=SignalType.SCALAR)
-            for name in self._values
+            name: SignalDescriptor(name=name, type=SignalType.SCALAR) for name in self._values
         }
         self._staged = False
         self._step_count = 0
@@ -40,7 +38,7 @@ class MockAdapter:
     def stage(self) -> None:
         self._staged = True
 
-    def step(self, dt: float) -> None:
+    def step(self, _dt: float) -> None:
         self._step_count += 1
 
     def reset(self) -> None:

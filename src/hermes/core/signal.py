@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from hermes.core.module import ModuleAdapter
@@ -135,7 +135,7 @@ class SignalBus:
         module_name, signal_name = self._parse_qualified(qualified_name)
         self._modules[module_name].set(signal_name, value)
 
-    def get_schema(self) -> dict:
+    def get_schema(self) -> dict[str, Any]:
         """Return full schema for all modules.
 
         Returns a dictionary suitable for JSON serialization containing
@@ -192,15 +192,11 @@ class SignalBus:
 
         src_mod = self._modules[wire.src_module]
         if wire.src_signal not in src_mod.signals:
-            raise ValueError(
-                f"Source signal not found: {wire.src_module}.{wire.src_signal}"
-            )
+            raise ValueError(f"Source signal not found: {wire.src_module}.{wire.src_signal}")
 
         dst_mod = self._modules[wire.dst_module]
         if wire.dst_signal not in dst_mod.signals:
-            raise ValueError(
-                f"Destination signal not found: {wire.dst_module}.{wire.dst_signal}"
-            )
+            raise ValueError(f"Destination signal not found: {wire.dst_module}.{wire.dst_signal}")
 
     def _parse_qualified(self, qualified_name: str) -> tuple[str, str]:
         """Parse qualified name into (module, signal).
@@ -214,7 +210,5 @@ class SignalBus:
         """
         parts = qualified_name.split(".", 1)
         if len(parts) != 2:
-            raise ValueError(
-                f"Invalid qualified name '{qualified_name}': expected 'module.signal'"
-            )
+            raise ValueError(f"Invalid qualified name '{qualified_name}': expected 'module.signal'")
         return parts[0], parts[1]

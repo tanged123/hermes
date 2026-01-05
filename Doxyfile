@@ -1,0 +1,17 @@
+PROJECT_NAME           = "Hermes"
+PROJECT_BRIEF          = "Simulation Orchestration Platform for Aerospace"
+OUTPUT_DIRECTORY       = build/docs
+INPUT                  = README.md src docs
+RECURSIVE              = YES
+FILE_PATTERNS          = *.py *.md
+USE_MDFILE_AS_MAINPAGE = README.md
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+HAVE_DOT               = YES
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+WARN_IF_UNDOCUMENTED   = NO
+
+# Python-specific settings (modern Doxygen has native Python support)
+EXTENSION_MAPPING      = py=Python

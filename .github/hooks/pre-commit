@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Pre-commit hook: Auto-format code with treefmt before committing
+
+set -e
+
+echo "Running treefmt to format staged files..."
+
+# Run nix fmt (treefmt)
+if ! nix fmt; then
+    echo "Formatting failed!"
+    exit 1
+fi
+
+# Add any changes made by the formatter
+git add -u
+
+echo "Code formatted successfully!"
