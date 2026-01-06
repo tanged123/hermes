@@ -109,20 +109,62 @@ class WireConfig(BaseModel):
         return v
 
 
+# Microseconds per second constant for time conversions
+_MICROSECONDS_PER_SECOND: int = 1_000_000
+
+
 class ExecutionConfig(BaseModel):
-    """Execution and scheduling settings."""
+    """Execution and scheduling settings.
+
+    Time values are stored as floats for configuration convenience, but
+    converted to integer microseconds at runtime for determinism.
+    """
 
     mode: ExecutionMode = ExecutionMode.AFAP
     """Execution mode: realtime, afap, or single_frame."""
 
     rate_hz: float = 100.0
-    """Simulation rate in Hz."""
+    """Simulation rate in Hz. Must produce an integer microsecond timestep."""
 
     end_time: float | None = None
     """Simulation end time in seconds. None = run until stopped."""
 
     schedule: list[str] = Field(default_factory=list)
     """Explicit execution order. Empty = registration order."""
+
+    @field_validator("rate_hz")
+    @classmethod
+    def _validate_rate_hz(cls, v: float) -> float:
+        """Validate that rate_hz produces an integer microsecond timestep."""
+        if v <= 0:
+            raise ValueError("rate_hz must be positive")
+        # Check that 1/rate_hz produces an integer number of microseconds
+        dt_us = _MICROSECONDS_PER_SECOND / v
+        if abs(dt_us - round(dt_us)) > 1e-9:
+            raise ValueError(
+                f"rate_hz={v} does not produce an integer microsecond timestep. "
+                f"dt would be {dt_us:.6f} µs. Use a rate that divides 1,000,000 evenly "
+                f"(e.g., 1, 2, 4, 5, 8, 10, 20, 25, 40, 50, 100, 125, 200, 250, 500, 1000)."
+            )
+        return v
+
+    def get_dt_us(self) -> int:
+        """Get timestep in microseconds.
+
+        Returns:
+            Timestep as integer microseconds for deterministic simulation.
+        """
+        return round(_MICROSECONDS_PER_SECOND / self.rate_hz)
+
+    def get_end_time_us(self) -> int | None:
+        """Get end time in microseconds.
+
+        Returns:
+            End time as integer microseconds, or None if no end time set.
+        """
+        if self.end_time is None:
+            return None
+        return round(self.end_time * _MICROSECONDS_PER_SECOND)
 
 
 class ServerConfig(BaseModel):

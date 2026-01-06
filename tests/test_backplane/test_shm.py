@@ -133,3 +133,61 @@ class TestSharedMemoryManager:
                 assert os.WEXITSTATUS(status) == 0
         finally:
             shm.destroy()
+
+    def test_time_us_integer(self, shm_name: str, test_signals: list[SignalDescriptor]) -> None:
+        """Time should be stored and retrieved as integer microseconds."""
+        shm = SharedMemoryManager(shm_name)
+        try:
+            shm.create(test_signals)
+
+            # Set and get time_us directly
+            shm.set_time_us(1_500_000)  # 1.5 seconds
+            assert shm.get_time_us() == 1_500_000
+            assert isinstance(shm.get_time_us(), int)
+
+            # Float convenience method should convert
+            assert shm.get_time() == 1.5
+        finally:
+            shm.destroy()
+
+    def test_time_float_convenience(
+        self, shm_name: str, test_signals: list[SignalDescriptor]
+    ) -> None:
+        """Float set_time should convert to integer microseconds."""
+        shm = SharedMemoryManager(shm_name)
+        try:
+            shm.create(test_signals)
+
+            # Set via float convenience method
+            shm.set_time(2.5)  # 2.5 seconds
+
+            # Should be stored as integer microseconds
+            assert shm.get_time_us() == 2_500_000
+            assert shm.get_time() == 2.5
+        finally:
+            shm.destroy()
+
+    def test_time_us_large_values(
+        self, shm_name: str, test_signals: list[SignalDescriptor]
+    ) -> None:
+        """Should handle large time values without overflow."""
+        shm = SharedMemoryManager(shm_name)
+        try:
+            shm.create(test_signals)
+
+            # 1 hour in microseconds = 3,600,000,000 µs
+            one_hour_us = 3_600_000_000
+            shm.set_time_us(one_hour_us)
+            assert shm.get_time_us() == one_hour_us
+
+            # 1 day in microseconds
+            one_day_us = 86_400_000_000
+            shm.set_time_us(one_day_us)
+            assert shm.get_time_us() == one_day_us
+
+            # 1 year in microseconds (well within u64 range)
+            one_year_us = 365 * 24 * 3600 * 1_000_000
+            shm.set_time_us(one_year_us)
+            assert shm.get_time_us() == one_year_us
+        finally:
+            shm.destroy()

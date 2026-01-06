@@ -7,6 +7,11 @@ Operating Modes:
     realtime: Paced to wall-clock time (for HIL, visualization)
     afap: As fast as possible (for batch runs, Monte Carlo)
     single_frame: Manual stepping (for debugging, scripted scenarios)
+
+Determinism:
+    Time is tracked internally as integer microseconds to ensure bit-exact
+    reproducibility across runs and platforms. The float `time` property
+    is provided for API convenience, while `time_us` gives the exact value.
 """
 
 from __future__ import annotations
@@ -38,6 +43,9 @@ class Scheduler:
         >>> await scheduler.run(callback=my_telemetry_fn)
     """
 
+    # Microseconds per second (for time conversions)
+    MICROSECONDS_PER_SECOND: int = 1_000_000
+
     def __init__(
         self,
         process_mgr: ProcessManager,
@@ -52,7 +60,8 @@ class Scheduler:
         self._pm = process_mgr
         self._config = config
         self._frame: int = 0
-        self._time: float = 0.0
+        self._time_us: int = 0  # Time in microseconds for determinism
+        self._dt_us: int = config.get_dt_us()  # Precomputed timestep in µs
         self._running: bool = False
         self._paused: bool = False
 
@@ -63,13 +72,37 @@ class Scheduler:
 
     @property
     def time(self) -> float:
-        """Current simulation time in seconds."""
-        return self._time
+        """Current simulation time in seconds.
+
+        This is derived from `time_us` for API convenience.
+        For deterministic comparisons, use `time_us` instead.
+        """
+        return self._time_us / self.MICROSECONDS_PER_SECOND
+
+    @property
+    def time_us(self) -> int:
+        """Current simulation time in microseconds.
+
+        This is the authoritative time value for deterministic simulations.
+        Use this for exact comparisons and reproducibility.
+        """
+        return self._time_us
 
     @property
     def dt(self) -> float:
-        """Timestep in seconds."""
-        return 1.0 / self._config.rate_hz
+        """Timestep in seconds.
+
+        Derived from `dt_us` for API convenience.
+        """
+        return self._dt_us / self.MICROSECONDS_PER_SECOND
+
+    @property
+    def dt_us(self) -> int:
+        """Timestep in microseconds.
+
+        This is the authoritative timestep value for deterministic simulations.
+        """
+        return self._dt_us
 
     @property
     def running(self) -> bool:
@@ -95,9 +128,9 @@ class Scheduler:
         log.info("Staging simulation")
         self._pm.stage_all()
         self._frame = 0
-        self._time = 0.0
-        self._pm.update_time(self._frame, self._time)
-        log.debug("Simulation staged", frame=self._frame, time=self._time)
+        self._time_us = 0
+        self._pm.update_time(self._frame, self._time_us)
+        log.debug("Simulation staged", frame=self._frame, time_us=self._time_us)
 
     def step(self, count: int = 1) -> None:
         """Execute N simulation frames.
@@ -113,17 +146,16 @@ class Scheduler:
 
         for _ in range(count):
             # Update time before step so modules see current time
-            self._pm.update_time(self._frame, self._time)
+            self._pm.update_time(self._frame, self._time_us)
 
             # Execute all modules for this frame
             self._pm.step_all()
 
-            # Advance simulation state
-            # Use multiplication instead of accumulation to avoid floating-point drift
+            # Advance simulation state using integer arithmetic for determinism
             self._frame += 1
-            self._time = self._frame * self.dt
+            self._time_us = self._frame * self._dt_us
 
-        log.debug("Stepped", frames=count, frame=self._frame, time=self._time)
+        log.debug("Stepped", frames=count, frame=self._frame, time_us=self._time_us)
 
     def reset(self) -> None:
         """Reset simulation to initial state.
@@ -131,8 +163,8 @@ class Scheduler:
         Resets frame and time counters. Note: does not re-stage modules.
         """
         self._frame = 0
-        self._time = 0.0
-        self._pm.update_time(self._frame, self._time)
+        self._time_us = 0
+        self._pm.update_time(self._frame, self._time_us)
         log.info("Simulation reset")
 
     async def run(
@@ -147,12 +179,15 @@ class Scheduler:
 
         Args:
             callback: Optional async callback invoked after each frame
-                     with (frame_number, simulation_time)
+                     with (frame_number, simulation_time_seconds)
         """
         from hermes.core.config import ExecutionMode
 
         self._running = True
         wall_start = time.perf_counter()
+
+        # Get end time in microseconds for deterministic comparison
+        end_time_us = self._config.get_end_time_us()
 
         log.info(
             "Starting simulation loop",
@@ -163,9 +198,9 @@ class Scheduler:
 
         try:
             while self._running:
-                # Check end condition
-                if self._config.end_time is not None and self._time >= self._config.end_time:
-                    log.info("End time reached", time=self._time)
+                # Check end condition using integer comparison for determinism
+                if end_time_us is not None and self._time_us >= end_time_us:
+                    log.info("End time reached", time_us=self._time_us)
                     break
 
                 # Pause handling
@@ -181,13 +216,13 @@ class Scheduler:
                 # Execute one frame
                 self.step()
 
-                # Invoke callback if provided
+                # Invoke callback if provided (uses float time for API convenience)
                 if callback is not None:
-                    await callback(self._frame, self._time)
+                    await callback(self._frame, self.time)
 
-                # Real-time pacing
+                # Real-time pacing (uses float time for wall-clock sync)
                 if self._config.mode == ExecutionMode.REALTIME:
-                    target_wall = wall_start + self._time
+                    target_wall = wall_start + self.time
                     sleep_time = target_wall - time.perf_counter()
                     if sleep_time > 0:
                         await asyncio.sleep(sleep_time)
@@ -202,7 +237,7 @@ class Scheduler:
         log.info(
             "Simulation loop ended",
             frames=self._frame,
-            time=self._time,
+            time_us=self._time_us,
         )
 
     def pause(self) -> None:
