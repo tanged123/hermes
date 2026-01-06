@@ -119,8 +119,9 @@ class Scheduler:
             self._pm.step_all()
 
             # Advance simulation state
-            self._time += self.dt
+            # Use multiplication instead of accumulation to avoid floating-point drift
             self._frame += 1
+            self._time = self._frame * self.dt
 
         log.debug("Stepped", frames=count, frame=self._frame, time=self._time)
 
