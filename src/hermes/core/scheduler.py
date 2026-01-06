@@ -9,9 +9,13 @@ Operating Modes:
     single_frame: Manual stepping (for debugging, scripted scenarios)
 
 Determinism:
-    Time is tracked internally as integer microseconds to ensure bit-exact
+    Time is tracked internally as integer nanoseconds to ensure
     reproducibility across runs and platforms. The float `time` property
-    is provided for API convenience, while `time_us` gives the exact value.
+    is provided for API convenience, while `time_ns` gives the exact value.
+
+    For rates that don't divide evenly into 1 billion (e.g., 600 Hz),
+    the timestep is rounded to the nearest nanosecond. This introduces
+    bounded error (~0.72ms/hour at 600 Hz) but remains deterministic.
 """
 
 from __future__ import annotations
@@ -43,8 +47,8 @@ class Scheduler:
         >>> await scheduler.run(callback=my_telemetry_fn)
     """
 
-    # Microseconds per second (for time conversions)
-    MICROSECONDS_PER_SECOND: int = 1_000_000
+    # Nanoseconds per second (for time conversions)
+    NANOSECONDS_PER_SECOND: int = 1_000_000_000
 
     def __init__(
         self,
@@ -60,8 +64,8 @@ class Scheduler:
         self._pm = process_mgr
         self._config = config
         self._frame: int = 0
-        self._time_us: int = 0  # Time in microseconds for determinism
-        self._dt_us: int = config.get_dt_us()  # Precomputed timestep in µs
+        self._time_ns: int = 0  # Time in nanoseconds for determinism
+        self._dt_ns: int = config.get_dt_ns()  # Precomputed timestep in ns
         self._running: bool = False
         self._paused: bool = False
 
@@ -74,35 +78,35 @@ class Scheduler:
     def time(self) -> float:
         """Current simulation time in seconds.
 
-        This is derived from `time_us` for API convenience.
-        For deterministic comparisons, use `time_us` instead.
+        This is derived from `time_ns` for API convenience.
+        For deterministic comparisons, use `time_ns` instead.
         """
-        return self._time_us / self.MICROSECONDS_PER_SECOND
+        return self._time_ns / self.NANOSECONDS_PER_SECOND
 
     @property
-    def time_us(self) -> int:
-        """Current simulation time in microseconds.
+    def time_ns(self) -> int:
+        """Current simulation time in nanoseconds.
 
         This is the authoritative time value for deterministic simulations.
         Use this for exact comparisons and reproducibility.
         """
-        return self._time_us
+        return self._time_ns
 
     @property
     def dt(self) -> float:
         """Timestep in seconds.
 
-        Derived from `dt_us` for API convenience.
+        Derived from `dt_ns` for API convenience.
         """
-        return self._dt_us / self.MICROSECONDS_PER_SECOND
+        return self._dt_ns / self.NANOSECONDS_PER_SECOND
 
     @property
-    def dt_us(self) -> int:
-        """Timestep in microseconds.
+    def dt_ns(self) -> int:
+        """Timestep in nanoseconds.
 
         This is the authoritative timestep value for deterministic simulations.
         """
-        return self._dt_us
+        return self._dt_ns
 
     @property
     def running(self) -> bool:
@@ -128,9 +132,9 @@ class Scheduler:
         log.info("Staging simulation")
         self._pm.stage_all()
         self._frame = 0
-        self._time_us = 0
-        self._pm.update_time(self._frame, self._time_us)
-        log.debug("Simulation staged", frame=self._frame, time_us=self._time_us)
+        self._time_ns = 0
+        self._pm.update_time(self._frame, self._time_ns)
+        log.debug("Simulation staged", frame=self._frame, time_ns=self._time_ns)
 
     def step(self, count: int = 1) -> None:
         """Execute N simulation frames.
@@ -146,16 +150,16 @@ class Scheduler:
 
         for _ in range(count):
             # Update time before step so modules see current time
-            self._pm.update_time(self._frame, self._time_us)
+            self._pm.update_time(self._frame, self._time_ns)
 
             # Execute all modules for this frame
             self._pm.step_all()
 
             # Advance simulation state using integer arithmetic for determinism
             self._frame += 1
-            self._time_us = self._frame * self._dt_us
+            self._time_ns = self._frame * self._dt_ns
 
-        log.debug("Stepped", frames=count, frame=self._frame, time_us=self._time_us)
+        log.debug("Stepped", frames=count, frame=self._frame, time_ns=self._time_ns)
 
     def reset(self) -> None:
         """Reset simulation to initial state.
@@ -163,8 +167,8 @@ class Scheduler:
         Resets frame and time counters. Note: does not re-stage modules.
         """
         self._frame = 0
-        self._time_us = 0
-        self._pm.update_time(self._frame, self._time_us)
+        self._time_ns = 0
+        self._pm.update_time(self._frame, self._time_ns)
         log.info("Simulation reset")
 
     async def run(
@@ -186,8 +190,8 @@ class Scheduler:
         self._running = True
         wall_start = time.perf_counter()
 
-        # Get end time in microseconds for deterministic comparison
-        end_time_us = self._config.get_end_time_us()
+        # Get end time in nanoseconds for deterministic comparison
+        end_time_ns = self._config.get_end_time_ns()
 
         log.info(
             "Starting simulation loop",
@@ -199,8 +203,8 @@ class Scheduler:
         try:
             while self._running:
                 # Check end condition using integer comparison for determinism
-                if end_time_us is not None and self._time_us >= end_time_us:
-                    log.info("End time reached", time_us=self._time_us)
+                if end_time_ns is not None and self._time_ns >= end_time_ns:
+                    log.info("End time reached", time_ns=self._time_ns)
                     break
 
                 # Pause handling
@@ -237,7 +241,7 @@ class Scheduler:
         log.info(
             "Simulation loop ended",
             frames=self._frame,
-            time_us=self._time_us,
+            time_ns=self._time_ns,
         )
 
     def pause(self) -> None:

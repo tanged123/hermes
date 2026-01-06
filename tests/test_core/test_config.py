@@ -123,53 +123,35 @@ class TestExecutionConfig:
         assert cfg.end_time is None
         assert cfg.schedule == []
 
-    def test_get_dt_us(self) -> None:
-        """Should return integer microseconds for timestep."""
+    def test_get_dt_ns(self) -> None:
+        """Should return integer nanoseconds for timestep."""
         cfg = ExecutionConfig(rate_hz=100.0)
-        assert cfg.get_dt_us() == 10000  # 1/100 s = 10000 µs
-        assert isinstance(cfg.get_dt_us(), int)
+        assert cfg.get_dt_ns() == 10_000_000  # 1/100 s = 10,000,000 ns
+        assert isinstance(cfg.get_dt_ns(), int)
 
-    def test_get_end_time_us(self) -> None:
-        """Should return integer microseconds for end time."""
+    def test_get_end_time_ns(self) -> None:
+        """Should return integer nanoseconds for end time."""
         cfg = ExecutionConfig(end_time=1.5)
-        assert cfg.get_end_time_us() == 1_500_000  # 1.5 s = 1,500,000 µs
-        assert isinstance(cfg.get_end_time_us(), int)
+        assert cfg.get_end_time_ns() == 1_500_000_000  # 1.5 s = 1,500,000,000 ns
+        assert isinstance(cfg.get_end_time_ns(), int)
 
-    def test_get_end_time_us_none(self) -> None:
+    def test_get_end_time_ns_none(self) -> None:
         """Should return None when end_time is None."""
         cfg = ExecutionConfig(end_time=None)
-        assert cfg.get_end_time_us() is None
+        assert cfg.get_end_time_ns() is None
 
-    def test_rate_hz_valid_rates(self) -> None:
-        """Valid rates should be accepted (those that divide 1,000,000)."""
-        valid_rates = [
-            1.0,
-            2.0,
-            4.0,
-            5.0,
-            8.0,
-            10.0,
-            20.0,
-            25.0,
-            40.0,
-            50.0,
-            100.0,
-            125.0,
-            200.0,
-            250.0,
-            500.0,
-            1000.0,
-        ]
-        for rate in valid_rates:
+    def test_rate_hz_any_positive_allowed(self) -> None:
+        """Any positive rate should be accepted."""
+        rates = [1.0, 10.0, 50.0, 100.0, 600.0, 1000.0, 60.0, 120.0, 33.0]
+        for rate in rates:
             cfg = ExecutionConfig(rate_hz=rate)
             assert cfg.rate_hz == rate
 
-    def test_rate_hz_invalid_rates(self) -> None:
-        """Invalid rates should be rejected (those that don't produce integer µs)."""
-        invalid_rates = [3.0, 7.0, 11.0, 13.0, 33.0, 60.0, 120.0]
-        for rate in invalid_rates:
-            with pytest.raises(ValueError, match="integer microsecond"):
-                ExecutionConfig(rate_hz=rate)
+    def test_rate_hz_non_divisible_rounded(self) -> None:
+        """Non-divisible rates should round dt_ns to nearest nanosecond."""
+        cfg = ExecutionConfig(rate_hz=600.0)
+        # 1_000_000_000 / 600 = 1_666_666.666... -> rounds to 1_666_667
+        assert cfg.get_dt_ns() == 1_666_667
 
     def test_rate_hz_zero_rejected(self) -> None:
         """Zero rate should be rejected."""

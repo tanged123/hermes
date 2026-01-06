@@ -71,22 +71,22 @@ class TestSchedulerStage:
         """stage() should reset frame and time to zero."""
         scheduler = Scheduler(mock_process_manager, default_config)
         scheduler._frame = 100
-        scheduler._time_us = 1_500_000  # 1.5 seconds in microseconds
+        scheduler._time_ns = 1_500_000_000  # 1.5 seconds in nanoseconds
 
         scheduler.stage()
 
         assert scheduler.frame == 0
         assert scheduler.time == 0.0
-        assert scheduler.time_us == 0
+        assert scheduler.time_ns == 0
 
     def test_stage_updates_shm_time(
         self, mock_process_manager: MagicMock, default_config: ExecutionConfig
     ) -> None:
-        """stage() should update shared memory time with time_us."""
+        """stage() should update shared memory time with time_ns."""
         scheduler = Scheduler(mock_process_manager, default_config)
         scheduler.stage()
 
-        # update_time now takes (frame, time_us) where time_us is in microseconds
+        # update_time now takes (frame, time_ns) where time_ns is in nanoseconds
         mock_process_manager.update_time.assert_called_with(0, 0)
 
 
@@ -146,13 +146,13 @@ class TestSchedulerReset:
         """reset() should clear frame and time."""
         scheduler = Scheduler(mock_process_manager, default_config)
         scheduler._frame = 100
-        scheduler._time_us = 1_500_000  # 1.5 seconds in microseconds
+        scheduler._time_ns = 1_500_000_000  # 1.5 seconds in nanoseconds
 
         scheduler.reset()
 
         assert scheduler.frame == 0
         assert scheduler.time == 0.0
-        assert scheduler.time_us == 0
+        assert scheduler.time_ns == 0
 
 
 class TestSchedulerPauseResume:
@@ -244,30 +244,30 @@ class TestSchedulerRun:
 
 
 class TestSchedulerDeterminism:
-    """Tests for deterministic integer microsecond time tracking."""
+    """Tests for deterministic integer nanosecond time tracking."""
 
-    def test_time_us_exact_integer(
+    def test_time_ns_exact_integer(
         self, mock_process_manager: MagicMock, default_config: ExecutionConfig
     ) -> None:
-        """time_us should be exact integer, not floating point."""
+        """time_ns should be exact integer, not floating point."""
         scheduler = Scheduler(mock_process_manager, default_config)
 
-        # At 100 Hz, dt_us = 10000 µs
-        assert scheduler.dt_us == 10000
+        # At 100 Hz, dt_ns = 10_000_000 ns
+        assert scheduler.dt_ns == 10_000_000
 
         scheduler.step(1)
-        assert scheduler.time_us == 10000  # Exactly 10000 µs
-        assert isinstance(scheduler.time_us, int)
+        assert scheduler.time_ns == 10_000_000  # Exactly 10ms in ns
+        assert isinstance(scheduler.time_ns, int)
 
-    def test_time_derived_from_time_us(
+    def test_time_derived_from_time_ns(
         self, mock_process_manager: MagicMock, default_config: ExecutionConfig
     ) -> None:
-        """Float time should be derived from integer time_us."""
+        """Float time should be derived from integer time_ns."""
         scheduler = Scheduler(mock_process_manager, default_config)
         scheduler.step(1)
 
-        # time should be time_us / 1_000_000
-        assert scheduler.time == scheduler.time_us / 1_000_000
+        # time should be time_ns / 1_000_000_000
+        assert scheduler.time == scheduler.time_ns / 1_000_000_000
         assert scheduler.time == 0.01
 
     def test_no_accumulation_drift(
@@ -279,8 +279,8 @@ class TestSchedulerDeterminism:
         # Run 10000 frames at 100 Hz = 100 seconds
         scheduler.step(10000)
 
-        # With integer math: time_us = 10000 * 10000 = 100_000_000 µs = 100 seconds
-        assert scheduler.time_us == 100_000_000
+        # With integer math: time_ns = 10000 * 10_000_000 = 100_000_000_000 ns = 100s
+        assert scheduler.time_ns == 100_000_000_000
         assert scheduler.frame == 10000
 
         # Float time should be exactly 100.0 (no drift)
@@ -296,27 +296,41 @@ class TestSchedulerDeterminism:
         for _ in range(1000):
             scheduler.step(1)
 
-        # Should be exactly frame * dt_us, not accumulated
-        expected_time_us = scheduler.frame * scheduler.dt_us
-        assert scheduler.time_us == expected_time_us
-        assert scheduler.time_us == 10_000_000  # 10 seconds
+        # Should be exactly frame * dt_ns, not accumulated
+        expected_time_ns = scheduler.frame * scheduler.dt_ns
+        assert scheduler.time_ns == expected_time_ns
+        assert scheduler.time_ns == 10_000_000_000  # 10 seconds in ns
 
     def test_different_rates_integer_dt(self, mock_process_manager: MagicMock) -> None:
-        """Different valid rates should produce integer dt_us."""
+        """Different rates should produce correct dt_ns."""
         rates_and_expected_dt = [
-            (1.0, 1_000_000),  # 1 Hz -> 1,000,000 µs
-            (10.0, 100_000),  # 10 Hz -> 100,000 µs
-            (50.0, 20_000),  # 50 Hz -> 20,000 µs
-            (100.0, 10_000),  # 100 Hz -> 10,000 µs
-            (200.0, 5_000),  # 200 Hz -> 5,000 µs
-            (500.0, 2_000),  # 500 Hz -> 2,000 µs
-            (1000.0, 1_000),  # 1000 Hz -> 1,000 µs
+            (1.0, 1_000_000_000),  # 1 Hz -> 1,000,000,000 ns
+            (10.0, 100_000_000),  # 10 Hz -> 100,000,000 ns
+            (50.0, 20_000_000),  # 50 Hz -> 20,000,000 ns
+            (100.0, 10_000_000),  # 100 Hz -> 10,000,000 ns
+            (200.0, 5_000_000),  # 200 Hz -> 5,000,000 ns
+            (500.0, 2_000_000),  # 500 Hz -> 2,000,000 ns
+            (1000.0, 1_000_000),  # 1000 Hz -> 1,000,000 ns
         ]
 
-        for rate_hz, expected_dt_us in rates_and_expected_dt:
+        for rate_hz, expected_dt_ns in rates_and_expected_dt:
             config = ExecutionConfig(rate_hz=rate_hz)
             scheduler = Scheduler(mock_process_manager, config)
-            assert scheduler.dt_us == expected_dt_us, f"Failed for rate_hz={rate_hz}"
+            assert scheduler.dt_ns == expected_dt_ns, f"Failed for rate_hz={rate_hz}"
+
+    def test_non_divisible_rate_allowed(self, mock_process_manager: MagicMock) -> None:
+        """Non-divisible rates (like 600 Hz) should be allowed with rounding."""
+        config = ExecutionConfig(rate_hz=600.0)
+        scheduler = Scheduler(mock_process_manager, config)
+
+        # 1_000_000_000 / 600 = 1_666_666.666... -> rounds to 1_666_667 ns
+        assert scheduler.dt_ns == 1_666_667
+
+        # Run 600 frames (should be ~1 second)
+        scheduler.step(600)
+
+        # With rounding: 600 * 1_666_667 = 1_000_000_200 ns (200 ns error)
+        assert scheduler.time_ns == 1_000_000_200
 
     def test_reproducibility_across_runs(
         self, mock_process_manager: MagicMock, default_config: ExecutionConfig
@@ -329,7 +343,7 @@ class TestSchedulerDeterminism:
             times: list[int] = []
             for _ in range(100):
                 scheduler.step(1)
-                times.append(scheduler.time_us)
+                times.append(scheduler.time_ns)
             results.append(times)
 
         # All runs should be identical

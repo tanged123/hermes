@@ -361,18 +361,18 @@ class ProcessManager:
         # Wait for all modules to complete
         self._barrier.wait_all_done()
 
-    def update_time(self, frame: int, time_us: int) -> None:
+    def update_time(self, frame: int, time_ns: int) -> None:
         """Update frame number and simulation time in shared memory.
 
         Args:
             frame: Current frame number
-            time_us: Current simulation time in microseconds
+            time_ns: Current simulation time in nanoseconds
         """
         if self._shm is None:
             raise RuntimeError("ProcessManager not initialized")
 
         self._shm.set_frame(frame)
-        self._shm.set_time_us(time_us)
+        self._shm.set_time_ns(time_ns)
 
     def terminate_all(self) -> None:
         """Gracefully terminate all modules."""

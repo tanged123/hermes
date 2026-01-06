@@ -8,9 +8,9 @@ Memory Layout:
     ┌─────────────────────────────────────────────────────────┐
     │ Header (64 bytes)                                        │
     │   - magic: u32 ("HERM")                                 │
-    │   - version: u32 (currently 2)                          │
+    │   - version: u32 (currently 3)                          │
     │   - frame: u64                                          │
-    │   - time_us: u64 (microseconds for determinism)         │
+    │   - time_ns: u64 (nanoseconds for determinism)          │
     │   - signal_count: u32                                   │
     │   - reserved: [u8; 36]                                  │
     ├─────────────────────────────────────────────────────────┤
@@ -25,8 +25,8 @@ Memory Layout:
     └─────────────────────────────────────────────────────────┘
 
 Determinism:
-    Time is stored as integer microseconds (u64) rather than floating-point
-    seconds to ensure bit-exact reproducibility across runs and platforms.
+    Time is stored as integer nanoseconds (u64) rather than floating-point
+    seconds to ensure reproducibility across runs and platforms.
 """
 
 from __future__ import annotations
@@ -61,9 +61,9 @@ class SharedMemoryManager:
     """
 
     MAGIC = 0x4845524D  # "HERM" in ASCII
-    VERSION = 2  # v2: time_us as u64 instead of time as f64
+    VERSION = 3  # v3: time_ns (nanoseconds) as u64
     HEADER_SIZE = 64
-    HEADER_FORMAT = "<I I Q Q I"  # magic, version, frame, time_us, signal_count
+    HEADER_FORMAT = "<I I Q Q I"  # magic, version, frame, time_ns, signal_count
     HEADER_STRUCT_SIZE = struct.calcsize(HEADER_FORMAT)
 
     def __init__(self, name: str) -> None:
@@ -143,7 +143,7 @@ class SharedMemoryManager:
             self.MAGIC,
             self.VERSION,
             0,  # frame
-            0,  # time_us (microseconds as integer)
+            0,  # time_ns (nanoseconds as integer)
             self._signal_count,
         )
         self._mmap.write(header)
@@ -316,8 +316,8 @@ class SharedMemoryManager:
         self._mmap.seek(offset)
         self._mmap.write(struct.pack("<d", value))
 
-    # Microseconds per second (for time conversions)
-    MICROSECONDS_PER_SECOND: int = 1_000_000
+    # Nanoseconds per second (for time conversions)
+    NANOSECONDS_PER_SECOND: int = 1_000_000_000
 
     def get_frame(self) -> int:
         """Get current frame number from header."""
@@ -334,39 +334,39 @@ class SharedMemoryManager:
         self._mmap.seek(8)
         self._mmap.write(struct.pack("<Q", frame))
 
-    def get_time_us(self) -> int:
-        """Get current simulation time in microseconds from header.
+    def get_time_ns(self) -> int:
+        """Get current simulation time in nanoseconds from header.
 
         This is the authoritative time value for deterministic simulations.
         """
         if self._mmap is None:
             raise RuntimeError("Not attached to shared memory")
-        self._mmap.seek(16)  # Offset of time_us field
-        (time_us,) = struct.unpack("<Q", self._mmap.read(8))
-        return int(time_us)
+        self._mmap.seek(16)  # Offset of time_ns field
+        (time_ns,) = struct.unpack("<Q", self._mmap.read(8))
+        return int(time_ns)
 
-    def set_time_us(self, time_us: int) -> None:
-        """Set simulation time in microseconds in header."""
+    def set_time_ns(self, time_ns: int) -> None:
+        """Set simulation time in nanoseconds in header."""
         if self._mmap is None:
             raise RuntimeError("Not attached to shared memory")
         self._mmap.seek(16)
-        self._mmap.write(struct.pack("<Q", time_us))
+        self._mmap.write(struct.pack("<Q", time_ns))
 
     def get_time(self) -> float:
         """Get current simulation time in seconds from header.
 
-        This is derived from `get_time_us()` for API convenience.
-        For deterministic comparisons, use `get_time_us()` instead.
+        This is derived from `get_time_ns()` for API convenience.
+        For deterministic comparisons, use `get_time_ns()` instead.
         """
-        return self.get_time_us() / self.MICROSECONDS_PER_SECOND
+        return self.get_time_ns() / self.NANOSECONDS_PER_SECOND
 
     def set_time(self, time: float) -> None:
         """Set simulation time in seconds in header.
 
-        Converts to microseconds internally. For precise control,
-        use `set_time_us()` instead.
+        Converts to nanoseconds internally. For precise control,
+        use `set_time_ns()` instead.
         """
-        self.set_time_us(round(time * self.MICROSECONDS_PER_SECOND))
+        self.set_time_ns(round(time * self.NANOSECONDS_PER_SECOND))
 
     def signal_names(self) -> list[str]:
         """Get list of all signal names."""

@@ -18,8 +18,8 @@ Example:
         print(f"Output: {value}")
 
 Determinism:
-    Time is tracked internally as integer microseconds. Use `get_time_us()`
-    and `wait_time_us()` for deterministic comparisons. The float-based
+    Time is tracked internally as integer nanoseconds. Use `get_time_ns()`
+    and `wait_time_ns()` for deterministic comparisons. The float-based
     `get_time()` and `wait_time()` methods are provided for convenience.
 """
 
@@ -117,8 +117,8 @@ class SimulationAPI:
     def get_time(self) -> float:
         """Get current simulation time in seconds.
 
-        This is derived from `get_time_us()` for API convenience.
-        For deterministic comparisons, use `get_time_us()` instead.
+        This is derived from `get_time_ns()` for API convenience.
+        For deterministic comparisons, use `get_time_ns()` instead.
 
         Returns:
             Current simulation time in seconds
@@ -130,21 +130,21 @@ class SimulationAPI:
             raise RuntimeError("Not connected to simulation")
         return self._shm.get_time()
 
-    def get_time_us(self) -> int:
-        """Get current simulation time in microseconds.
+    def get_time_ns(self) -> int:
+        """Get current simulation time in nanoseconds.
 
         This is the authoritative time value for deterministic simulations.
         Use this for exact comparisons and reproducibility.
 
         Returns:
-            Current simulation time in microseconds
+            Current simulation time in nanoseconds
 
         Raises:
             RuntimeError: If not connected
         """
         if not self._attached:
             raise RuntimeError("Not connected to simulation")
-        return self._shm.get_time_us()
+        return self._shm.get_time_ns()
 
     def wait_frame(self, target: int, timeout: float = 10.0) -> bool:
         """Wait until simulation reaches target frame.
@@ -173,7 +173,7 @@ class SimulationAPI:
         """Wait until simulation reaches target time in seconds.
 
         Note: Uses floating-point comparison. For deterministic behavior,
-        use `wait_time_us()` instead.
+        use `wait_time_ns()` instead.
 
         Args:
             target: Target simulation time in seconds
@@ -195,14 +195,14 @@ class SimulationAPI:
             time.sleep(0.001)
         return True
 
-    def wait_time_us(self, target_us: int, timeout: float = 10.0) -> bool:
-        """Wait until simulation reaches target time in microseconds.
+    def wait_time_ns(self, target_ns: int, timeout: float = 10.0) -> bool:
+        """Wait until simulation reaches target time in nanoseconds.
 
         This is the deterministic version - uses integer comparison for
         exact reproducibility.
 
         Args:
-            target_us: Target simulation time in microseconds
+            target_ns: Target simulation time in nanoseconds
             timeout: Maximum wall-clock seconds to wait
 
         Returns:
@@ -215,7 +215,7 @@ class SimulationAPI:
             raise RuntimeError("Not connected to simulation")
 
         start = time.time()
-        while self.get_time_us() < target_us:
+        while self.get_time_ns() < target_ns:
             if time.time() - start > timeout:
                 return False
             time.sleep(0.001)

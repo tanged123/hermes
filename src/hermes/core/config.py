@@ -109,22 +109,26 @@ class WireConfig(BaseModel):
         return v
 
 
-# Microseconds per second constant for time conversions
-_MICROSECONDS_PER_SECOND: int = 1_000_000
+# Nanoseconds per second constant for time conversions
+_NANOSECONDS_PER_SECOND: int = 1_000_000_000
 
 
 class ExecutionConfig(BaseModel):
     """Execution and scheduling settings.
 
     Time values are stored as floats for configuration convenience, but
-    converted to integer microseconds at runtime for determinism.
+    converted to integer nanoseconds at runtime for determinism.
+
+    Any positive rate_hz is allowed. Rates that don't divide evenly into
+    1 billion nanoseconds (e.g., 600 Hz) will have their timestep rounded,
+    introducing bounded error that does not accumulate over time.
     """
 
     mode: ExecutionMode = ExecutionMode.AFAP
     """Execution mode: realtime, afap, or single_frame."""
 
     rate_hz: float = 100.0
-    """Simulation rate in Hz. Must produce an integer microsecond timestep."""
+    """Simulation rate in Hz. Any positive value is allowed."""
 
     end_time: float | None = None
     """Simulation end time in seconds. None = run until stopped."""
@@ -135,36 +139,29 @@ class ExecutionConfig(BaseModel):
     @field_validator("rate_hz")
     @classmethod
     def _validate_rate_hz(cls, v: float) -> float:
-        """Validate that rate_hz produces an integer microsecond timestep."""
+        """Validate that rate_hz is positive."""
         if v <= 0:
             raise ValueError("rate_hz must be positive")
-        # Check that 1/rate_hz produces an integer number of microseconds
-        dt_us = _MICROSECONDS_PER_SECOND / v
-        if abs(dt_us - round(dt_us)) > 1e-9:
-            raise ValueError(
-                f"rate_hz={v} does not produce an integer microsecond timestep. "
-                f"dt would be {dt_us:.6f} µs. Use a rate that divides 1,000,000 evenly "
-                f"(e.g., 1, 2, 4, 5, 8, 10, 20, 25, 40, 50, 100, 125, 200, 250, 500, 1000)."
-            )
         return v
 
-    def get_dt_us(self) -> int:
-        """Get timestep in microseconds.
+    def get_dt_ns(self) -> int:
+        """Get timestep in nanoseconds.
 
         Returns:
-            Timestep as integer microseconds for deterministic simulation.
+            Timestep as integer nanoseconds for deterministic simulation.
+            Rounded to nearest nanosecond for rates that don't divide evenly.
         """
-        return round(_MICROSECONDS_PER_SECOND / self.rate_hz)
+        return round(_NANOSECONDS_PER_SECOND / self.rate_hz)
 
-    def get_end_time_us(self) -> int | None:
-        """Get end time in microseconds.
+    def get_end_time_ns(self) -> int | None:
+        """Get end time in nanoseconds.
 
         Returns:
-            End time as integer microseconds, or None if no end time set.
+            End time as integer nanoseconds, or None if no end time set.
         """
         if self.end_time is None:
             return None
-        return round(self.end_time * _MICROSECONDS_PER_SECOND)
+        return round(self.end_time * _NANOSECONDS_PER_SECOND)
 
 
 class ServerConfig(BaseModel):
