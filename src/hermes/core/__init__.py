@@ -1,4 +1,4 @@
-"""Core configuration and process management for Hermes."""
+"""Core configuration, process management, and scheduling for Hermes."""
 
 from hermes.core.config import (
     ExecutionConfig,
@@ -11,6 +11,7 @@ from hermes.core.config import (
     WireConfig,
 )
 from hermes.core.process import ModuleInfo, ModuleProcess, ModuleState, ProcessManager
+from hermes.core.scheduler import Scheduler
 
 __all__ = [
     # Configuration
@@ -27,4 +28,6 @@ __all__ = [
     "ModuleProcess",
     "ModuleState",
     "ModuleInfo",
+    # Scheduling
+    "Scheduler",
 ]

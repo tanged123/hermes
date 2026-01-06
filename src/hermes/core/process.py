@@ -345,6 +345,35 @@ class ProcessManager:
             if name in self._modules:
                 self._modules[name].stage()
 
+    def step_all(self) -> None:
+        """Execute one simulation frame across all modules.
+
+        Uses barrier synchronization:
+        1. Signal all modules to execute their step
+        2. Wait for all modules to complete
+        """
+        if self._barrier is None:
+            raise RuntimeError("ProcessManager not initialized")
+
+        # Signal all modules to step
+        self._barrier.signal_step()
+
+        # Wait for all modules to complete
+        self._barrier.wait_all_done()
+
+    def update_time(self, frame: int, time: float) -> None:
+        """Update frame number and simulation time in shared memory.
+
+        Args:
+            frame: Current frame number
+            time: Current simulation time in seconds
+        """
+        if self._shm is None:
+            raise RuntimeError("ProcessManager not initialized")
+
+        self._shm.set_frame(frame)
+        self._shm.set_time(time)
+
     def terminate_all(self) -> None:
         """Gracefully terminate all modules."""
         # Terminate in reverse order
