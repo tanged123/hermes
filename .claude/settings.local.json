@@ -13,7 +13,11 @@
       "Bash(bd update:*)",
       "Bash(bd dep remove:*)",
       "Bash(bd dep add:*)",
-      "Bash(bd ready:*)"
+      "Bash(bd ready:*)",
+      "Bash(pip install:*)",
+      "Bash(ls:*)",
+      "Bash(uv pip install:*)",
+      "Bash(bd close:*)"
     ]
   }
 }

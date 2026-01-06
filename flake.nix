@@ -47,6 +47,7 @@
             ps.structlog
             ps.numpy
             ps.click
+            ps.posix-ipc # POSIX IPC (shared memory, semaphores)
             # Testing
             ps.pytest
             ps.pytest-asyncio
@@ -83,6 +84,7 @@
             pkgs.python3Packages.structlog
             pkgs.python3Packages.numpy
             pkgs.python3Packages.click
+            pkgs.python3Packages.posix-ipc
           ]
           ++ (if icarusPython != null then [ icarusPython ] else [ ]);
 
