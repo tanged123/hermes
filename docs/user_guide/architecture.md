@@ -102,9 +102,11 @@ value = shm.get_signal("position.x")
 
 # Frame and time tracking
 shm.set_frame(42)
-shm.set_time(0.42)
+shm.set_time(0.42)           # Float seconds (convenience)
+shm.set_time_ns(420_000_000) # Integer nanoseconds (authoritative)
 frame = shm.get_frame()
-time = shm.get_time()
+time = shm.get_time()        # Float seconds
+time_ns = shm.get_time_ns()  # Integer nanoseconds
 
 # Cleanup
 shm.destroy()
@@ -116,9 +118,9 @@ shm.destroy()
 ┌─────────────────────────────────────────────────────────────┐
 │ Header (64 bytes)                                            │
 │   - magic: u32 ("HERM")                                     │
-│   - version: u32                                            │
+│   - version: u32 (currently 3)                              │
 │   - frame: u64                                              │
-│   - time: f64                                               │
+│   - time_ns: u64 (nanoseconds for determinism)              │
 │   - signal_count: u32                                       │
 ├─────────────────────────────────────────────────────────────┤
 │ Signal Directory                                             │
@@ -129,6 +131,14 @@ shm.destroy()
 │ Data Region (signal values)                                  │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+**Deterministic Time Tracking:**
+
+Time is stored as integer nanoseconds (u64) rather than floating-point
+seconds. This ensures bit-exact reproducibility across runs and platforms.
+For rates that don't divide evenly into 1 billion (e.g., 600 Hz), the
+timestep is rounded to the nearest nanosecond, introducing bounded error
+(~0.72ms/hour at 600 Hz) that does not accumulate.
 
 ### FrameBarrier
 
@@ -318,11 +328,19 @@ with ProcessManager(config) as pm:
 | Property | Description |
 |----------|-------------|
 | `frame` | Current frame number |
-| `time` | Current simulation time (seconds) |
-| `dt` | Timestep (1/rate_hz) |
+| `time` | Current simulation time (float seconds, derived from time_ns) |
+| `time_ns` | Current simulation time (integer nanoseconds, authoritative) |
+| `dt` | Timestep (float seconds, derived from dt_ns) |
+| `dt_ns` | Timestep (integer nanoseconds, authoritative) |
 | `running` | Whether run loop is active |
 | `paused` | Whether simulation is paused |
 | `mode` | Current execution mode |
+
+**Deterministic Time:**
+
+The scheduler uses integer nanoseconds internally for determinism. Any positive
+`rate_hz` is allowed—rates that don't divide evenly into 1 billion are rounded
+to the nearest nanosecond.
 
 ---
 
@@ -359,7 +377,11 @@ with SimulationAPI("/hermes_sim") as sim:
 
     # Get timing info
     frame = sim.get_frame()
-    time = sim.get_time()
+    time = sim.get_time()        # Float seconds
+    time_ns = sim.get_time_ns()  # Integer nanoseconds (deterministic)
+
+    # Wait for specific time (nanosecond version for determinism)
+    sim.wait_time_ns(1_000_000_000, timeout=10.0)  # Wait for 1 second
 ```
 
 ---

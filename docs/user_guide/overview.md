@@ -23,7 +23,7 @@ Traditional approaches—linking everything into one process or using network pr
 
 ## The Hermes Solution
 
-Hermes uses **POSIX shared memory** and **semaphores** for zero-copy, microsecond-latency communication between processes:
+Hermes uses **POSIX shared memory** and **semaphores** for zero-copy, sub-microsecond-latency communication between processes, with **nanosecond-precision time tracking** for deterministic simulations:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -95,6 +95,14 @@ Shared memory means signals are exchanged without copying:
 - Other modules read directly from it
 - Only synchronization requires system calls
 
+### 5. Deterministic Time Tracking
+
+Time is tracked as integer nanoseconds internally:
+- **Reproducible**: Same results every run, across platforms
+- **No drift**: Uses multiplication (frame × dt), not accumulation
+- **Flexible rates**: Any positive rate_hz is supported (non-divisible rates rounded)
+- **Bounded error**: 600 Hz has ~0.72ms error per hour (vs ~720ms with microseconds)
+
 ## Operating Modes
 
 | Mode | Description | Use Case |
@@ -126,7 +134,8 @@ Phase 1 establishes the core infrastructure:
 - **Synchronization Primitives**: Frame barrier for lockstep execution
 - **Configuration System**: Pydantic-validated YAML loading
 - **Process Manager**: Module lifecycle and subprocess management
-- **Scheduler**: Multi-mode execution control
+- **Scheduler**: Multi-mode execution control with nanosecond precision
+- **Deterministic Time**: Integer nanosecond tracking for reproducibility
 - **CLI**: Command-line interface for running simulations
 - **Scripting API**: Python interface for runtime inspection/injection
 
