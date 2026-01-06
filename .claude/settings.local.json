@@ -21,7 +21,8 @@
       "Bash(bd show:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(timeout 30 nix develop:*)"
     ]
   }
 }

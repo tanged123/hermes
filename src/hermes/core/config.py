@@ -200,7 +200,19 @@ class HermesConfig(BaseModel):
         with path.open() as f:
             data = yaml.safe_load(f)
 
-        return cls.model_validate(data)
+        config = cls.model_validate(data)
+
+        # Resolve relative paths in module configs relative to config file
+        config_dir = path.parent.resolve()
+        for module in config.modules.values():
+            if module.executable is not None and not module.executable.is_absolute():
+                module.executable = config_dir / module.executable
+            if module.script is not None and not module.script.is_absolute():
+                module.script = config_dir / module.script
+            if module.config is not None and not module.config.is_absolute():
+                module.config = config_dir / module.config
+
+        return config
 
     def get_dt(self) -> float:
         """Get timestep in seconds."""
