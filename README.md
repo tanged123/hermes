@@ -5,30 +5,37 @@
 [![codecov](https://codecov.io/github/tanged123/hermes/graph/badge.svg)](https://codecov.io/github/tanged123/hermes)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://tanged123.github.io/hermes/)
 
-**Simulation Orchestration Platform for Aerospace**
+**Multi-Process Simulation Orchestration Platform**
 
-Hermes orchestrates simulation modules, routes signals between them, and serves telemetry to visualization clients. It is the middleware layer between physics engines like Icarus and visualization tools like Daedalus.
+Hermes coordinates simulation modules running as separate processes, enabling language-agnostic integration (C, C++, Python, Rust) through high-performance POSIX IPC. It provides deterministic execution scheduling, real-time pacing, and runtime inspection capabilities.
+
+## Why Hermes?
+
+Modern simulations often need to integrate heterogeneous components:
+- Physics engines in C++
+- Control systems in Python
+- Sensor models in Rust
+
+Hermes solves this by using **POSIX shared memory** for zero-copy signal exchange and **semaphores** for microsecond-latency synchronization—all configured via YAML, no recompilation needed.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                       HERMES                            │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
-│  │  Icarus  │  │  GNC SW  │  │ Injection│               │
-│  │ Adapter  │  │ Adapter  │  │ Adapter  │               │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘               │
-│       └─────────────┴─────────────┘                     │
-│              Signal Bus (routing)                       │
-│                      │                                  │
-│         ┌───────────┴───────────┐                       │
-│         │  WebSocket Server     │                       │
-│         └───────────────────────┘                       │
-└─────────────────────────────────────────────────────────┘
-                       │
-              ┌────────┴────────┐
-              │    Daedalus     │
-              └─────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                           HERMES CORE                                │
+├─────────────────────────────────────────────────────────────────────┤
+│  Scheduler          Process Manager           Data Backplane         │
+│  • realtime         • Module lifecycle        • POSIX Shared Memory │
+│  • afap             • Subprocess mgmt         • Semaphore barriers   │
+│  • single_frame     • Coordination            • Signal registry      │
+├─────────────────────────────────────────────────────────────────────┤
+│        ┌───────────────────┼───────────────────┐                    │
+│        ▼                   ▼                   ▼                    │
+│  ┌──────────┐       ┌──────────┐       ┌──────────┐                │
+│  │ Module A │       │ Module B │       │ Module C │                │
+│  │ (C/C++)  │       │ (Python) │       │ (Rust)   │                │
+│  └──────────┘       └──────────┘       └──────────┘                │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Quick Start
@@ -37,65 +44,16 @@ Hermes uses Nix for reproducible builds. Install [Nix](https://nixos.org/downloa
 
 ```bash
 # Enter development environment
-./scripts/dev.sh
-
-# Run tests
-./scripts/test.sh
+nix develop
 
 # Run CI (lint + typecheck + tests)
 ./scripts/ci.sh
 
-# Run with coverage
-./scripts/coverage.sh
+# Validate a configuration
+python -m hermes.cli.main validate examples/basic_sim.yaml
 
-# Generate documentation
-./scripts/generate_docs.sh
-
-# Clean build artifacts
-./scripts/clean.sh
-
-# Install pre-commit hooks (auto-format on commit)
-./scripts/install-hooks.sh
-```
-
-### Using Hermes
-
-```bash
-# Run simulation from config file
-hermes run examples/basic_sim.yaml
-
-# Run without WebSocket server (console output only)
-hermes run examples/basic_sim.yaml --no-server
-
-# Print schema JSON
-hermes schema examples/basic_sim.yaml
-```
-
-### Nix Packages
-
-```bash
-nix build              # Build hermes package
-nix develop            # Enter development shell (includes icarus bindings)
-```
-
-### Using as a Dependency
-
-```nix
-{
-  inputs.hermes.url = "github:tanged123/hermes";
-
-  outputs = { self, nixpkgs, hermes, ... }:
-    let
-      pkgs = nixpkgs.legacyPackages.x86_64-linux;
-      hermesPkg = hermes.packages.x86_64-linux.default;
-    in {
-      devShells.default = pkgs.mkShell {
-        packages = [
-          (pkgs.python3.withPackages (ps: [ hermesPkg ]))
-        ];
-      };
-    };
-}
+# Run a simulation
+python -m hermes.cli.main run examples/basic_sim.yaml
 ```
 
 ## Configuration
@@ -104,71 +62,118 @@ nix develop            # Enter development shell (includes icarus bindings)
 version: "0.2"
 
 modules:
-  icarus:
-    adapter: icarus
-    config: ./icarus_config.yaml
-
-  injection:
-    adapter: injection
+  vehicle:
+    type: script                    # script | process | inproc
+    script: ./vehicle.py
     signals:
-      - disturbance.force.x
-      - disturbance.force.y
+      - name: position.x
+        type: f64
+        unit: m
+      - name: velocity.x
+        type: f64
+        unit: m/s
+        writable: true
+
+  controller:
+    type: process
+    executable: ./controller_bin
+    config: ./controller.yaml
 
 wiring:
-  - src: injection.disturbance.force.x
-    dst: icarus.Environment.external_force.x
+  - src: vehicle.position.x
+    dst: controller.position_input
     gain: 1.0
     offset: 0.0
 
 execution:
-  mode: afap           # afap, realtime, paused
+  mode: afap                        # afap | realtime | single_frame
   rate_hz: 100.0
   end_time: 60.0
+  schedule:                         # Explicit execution order
+    - vehicle
+    - controller
 
 server:
-  host: "0.0.0.0"
-  port: 8765
-  telemetry_hz: 60.0
+  enabled: false                    # WebSocket server (Phase 2)
+```
+
+## Execution Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `afap` | As fast as possible | Batch runs, Monte Carlo |
+| `realtime` | Paced to wall-clock | Hardware-in-the-loop, visualization |
+| `single_frame` | Manual stepping | Debugging, scripted scenarios |
+
+## Core Components
+
+### Scheduler
+Controls simulation execution with support for multiple operating modes, pause/resume, and async callbacks.
+
+### ProcessManager
+Manages module subprocess lifecycles—spawning, staging, stepping, and graceful termination.
+
+### SharedMemoryManager
+Zero-copy signal exchange via POSIX shared memory with header tracking (frame, time, signal count).
+
+### FrameBarrier
+Semaphore-based synchronization ensuring all modules execute in lockstep each frame.
+
+### SimulationAPI
+Python API for runtime inspection and injection into running simulations.
+
+## Scripting API
+
+```python
+from hermes.scripting.api import SimulationAPI
+
+with SimulationAPI("/hermes_sim") as sim:
+    # Read signals
+    pos = sim.get("vehicle.position.x")
+
+    # Write signals
+    sim.set("controller.thrust_cmd", 1000.0)
+
+    # Batch operations
+    state = sim.sample(["vehicle.position.x", "vehicle.velocity.x"])
+
+    # Wait for frame
+    sim.wait_frame(100, timeout=10.0)
 ```
 
 ## Development
 
 ```bash
-# Run tests (inside nix develop)
-pytest
-
-# Run tests with coverage
-pytest --cov=hermes
-
-# Lint and format
-ruff check src tests
-ruff format src tests
-
-# Or use nix formatter (includes ruff + nixfmt)
-nix fmt
-
-# Type check
-mypy src
-
-# Build package
-nix build
+# Inside nix develop
+pytest                          # Run tests
+pytest --cov=hermes             # With coverage
+ruff check src tests            # Lint
+mypy src                        # Type check
+nix fmt                         # Format all files
 ```
 
-## Protocol
+## Documentation
 
-Hermes uses a two-channel WebSocket protocol:
+- [Overview](docs/user_guide/overview.md) - What Hermes is and why
+- [Architecture](docs/user_guide/architecture.md) - Core classes and data flow
+- [Quickstart](docs/user_guide/quickstart.md) - Get running in minutes
 
-**Control Channel (JSON):**
+## Project Status
 
-- Schema on connect
-- Commands: pause, resume, reset, step, set, subscribe
+**Phase 1 Complete:**
+- POSIX shared memory backplane
+- Semaphore synchronization
+- YAML configuration with Pydantic validation
+- Process lifecycle management
+- Multi-mode scheduler (realtime/afap/single_frame)
+- CLI (run, validate, list-signals)
+- Scripting API for inspection/injection
+- 66 unit tests
 
-**Telemetry Channel (Binary):**
-
-- 16-byte header: frame (u32) + time (f64) + count (u16) + reserved
-- Payload: signal values as f64 array
-
-See `docs/protocol.md` for full specification.
+**Coming in Phase 2:**
+- WebSocket server for real-time telemetry
+- Binary telemetry encoding
+- Icarus physics engine integration
 
 ## License
 
