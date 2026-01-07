@@ -459,3 +459,58 @@ class TestHermesServerInvalidCommands:
 
             assert data["type"] == "error"
             assert "Unknown action" in data["message"]
+
+
+class TestHermesServerSignalsWithoutDots:
+    """Tests for signals without module.signal format."""
+
+    @pytest.fixture
+    def shm_with_simple_signals(self) -> SharedMemoryManager:
+        """Create shared memory with signals that have no dots."""
+        shm_name = f"/hermes_simple_{uuid.uuid4().hex[:8]}"
+        signals = [
+            SignalDescriptor(name="temperature", type=SignalType.F64),
+            SignalDescriptor(name="pressure", type=SignalType.F64),
+            SignalDescriptor(name="sensor.x", type=SignalType.F64),  # Mixed: with dot
+        ]
+
+        shm = SharedMemoryManager(shm_name)
+        shm.create(signals)
+
+        yield shm
+
+        shm.destroy()
+
+    @pytest.mark.asyncio
+    async def test_schema_groups_dotless_signals_under_default(
+        self, shm_with_simple_signals: SharedMemoryManager
+    ) -> None:
+        """Signals without dots should appear under _default module."""
+        config = ServerConfig(host="127.0.0.1", port=0)
+        server = HermesServer(shm_with_simple_signals, config=config)
+        await server.start_background()
+
+        try:
+            assert server._server is not None
+            port = server._server.sockets[0].getsockname()[1]
+
+            async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+                schema_msg = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                schema = json.loads(schema_msg)
+
+                assert schema["type"] == "schema"
+                modules = schema["modules"]
+
+                # Dotless signals go to _default
+                assert "_default" in modules
+                default_signals = [s["name"] for s in modules["_default"]["signals"]]
+                assert "temperature" in default_signals
+                assert "pressure" in default_signals
+
+                # Dotted signal goes to its module
+                assert "sensor" in modules
+                sensor_signals = [s["name"] for s in modules["sensor"]["signals"]]
+                assert "x" in sensor_signals
+
+        finally:
+            await server.stop()

@@ -22,6 +22,7 @@ import websockets
 from hermes.backplane.shm import SharedMemoryManager
 from hermes.backplane.signals import SignalDescriptor, SignalType
 from hermes.server import HermesServer, ServerConfig
+from hermes.server.protocol import EventType
 from hermes.server.telemetry import TelemetryEncoder
 
 
@@ -448,3 +449,305 @@ class TestTelemetryBinaryFormat:
             values = struct.unpack("<2d", frame_data[24:])
             assert values[0] == pytest.approx(100.0)
             assert values[1] == pytest.approx(200.0)
+
+
+class TestTelemetryInterleaving:
+    """Tests for message interleaving during active telemetry streaming."""
+
+    @pytest.fixture
+    async def server_with_telemetry(
+        self, shm_with_signals: SharedMemoryManager, mock_scheduler: MockScheduler
+    ) -> HermesServer:
+        """Start a server with telemetry loop running."""
+        config = ServerConfig(host="127.0.0.1", port=0, telemetry_hz=100.0)
+        server = HermesServer(shm_with_signals, mock_scheduler, config)
+        await server.start_background()
+        server.start_telemetry_loop()
+        yield server
+        await server.stop()
+
+    @pytest.mark.asyncio
+    async def test_json_commands_during_telemetry_stream(
+        self,
+        server_with_telemetry: HermesServer,
+    ) -> None:
+        """JSON commands should work correctly while telemetry is streaming."""
+        assert server_with_telemetry._server is not None
+        port = server_with_telemetry._server.sockets[0].getsockname()[1]
+
+        async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+            # Receive schema
+            schema = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert schema["type"] == "schema"
+
+            # Subscribe to all signals - this starts telemetry flow
+            await ws.send(json.dumps({"action": "subscribe", "params": {"signals": ["*"]}}))
+
+            # Collect messages, handling both binary and JSON
+            ack_received = False
+            telemetry_count = 0
+            timeout = 1.0
+            start = asyncio.get_event_loop().time()
+
+            while asyncio.get_event_loop().time() - start < timeout:
+                try:
+                    data = await asyncio.wait_for(ws.recv(), timeout=0.1)
+                    if isinstance(data, bytes):
+                        telemetry_count += 1
+                    else:
+                        msg = json.loads(data)
+                        if msg["type"] == "ack" and msg["action"] == "subscribe":
+                            ack_received = True
+                            break
+                except TimeoutError:
+                    continue
+
+            assert ack_received, "Subscribe ack should be received despite telemetry"
+            # Telemetry may or may not have arrived yet depending on timing
+
+    @pytest.mark.asyncio
+    async def test_resume_command_with_active_telemetry(
+        self,
+        server_with_telemetry: HermesServer,
+        mock_scheduler: MockScheduler,
+    ) -> None:
+        """Resume command should return ack+event even with telemetry streaming."""
+        assert server_with_telemetry._server is not None
+        port = server_with_telemetry._server.sockets[0].getsockname()[1]
+
+        async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+            await asyncio.wait_for(ws.recv(), timeout=2.0)  # Schema
+
+            # Subscribe first
+            await ws.send(json.dumps({"action": "subscribe", "params": {"signals": ["*"]}}))
+
+            # Wait for ack, skipping any binary frames
+            while True:
+                data = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                if isinstance(data, str):
+                    ack = json.loads(data)
+                    assert ack["type"] == "ack"
+                    break
+
+            # Now resume - we should get both ack and event despite telemetry
+            await ws.send(json.dumps({"action": "resume"}))
+
+            # Collect JSON messages (ack and event), skipping binary
+            json_messages: dict[str, dict] = {}
+            attempts = 0
+            max_attempts = 20  # Allow for interleaved telemetry
+
+            while len(json_messages) < 2 and attempts < max_attempts:
+                data = await asyncio.wait_for(ws.recv(), timeout=0.5)
+                if isinstance(data, str):
+                    msg = json.loads(data)
+                    json_messages[msg["type"]] = msg
+                attempts += 1
+
+            assert "ack" in json_messages, "Should receive ack"
+            assert "event" in json_messages, "Should receive event"
+            assert json_messages["ack"]["action"] == "resume"
+            assert json_messages["event"]["event"] == "running"
+            assert not mock_scheduler.paused
+
+    @pytest.mark.asyncio
+    async def test_multiple_commands_during_telemetry(
+        self,
+        server_with_telemetry: HermesServer,
+    ) -> None:
+        """Multiple commands should work correctly with interleaved telemetry."""
+        assert server_with_telemetry._server is not None
+        port = server_with_telemetry._server.sockets[0].getsockname()[1]
+
+        async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+            await asyncio.wait_for(ws.recv(), timeout=2.0)  # Schema
+
+            # Subscribe
+            await ws.send(json.dumps({"action": "subscribe", "params": {"signals": ["*"]}}))
+
+            # Helper to get next JSON message
+            async def get_json_message() -> dict:
+                while True:
+                    data = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                    if isinstance(data, str):
+                        return json.loads(data)
+
+            ack = await get_json_message()
+            assert ack["action"] == "subscribe"
+
+            # Send multiple set commands rapidly
+            for i in range(5):
+                await ws.send(
+                    json.dumps(
+                        {
+                            "action": "set",
+                            "params": {"signal": "sensor.temperature", "value": float(i)},
+                        }
+                    )
+                )
+
+            # All acks should arrive (interspersed with telemetry)
+            acks_received = 0
+            for _ in range(50):  # Allow for lots of telemetry
+                try:
+                    data = await asyncio.wait_for(ws.recv(), timeout=0.2)
+                    if isinstance(data, str):
+                        msg = json.loads(data)
+                        if msg["type"] == "ack" and msg["action"] == "set":
+                            acks_received += 1
+                            if acks_received >= 5:
+                                break
+                except TimeoutError:
+                    break
+
+            assert acks_received == 5, f"Should receive all 5 set acks, got {acks_received}"
+
+
+class TestEdgeCases:
+    """Tests for edge cases and error paths."""
+
+    @pytest.fixture
+    async def server_no_scheduler(self, shm_with_signals: SharedMemoryManager) -> HermesServer:
+        """Start a server without scheduler."""
+        config = ServerConfig(host="127.0.0.1", port=0)
+        server = HermesServer(shm_with_signals, config=config)  # No scheduler
+        await server.start_background()
+        yield server
+        await server.stop()
+
+    @pytest.mark.asyncio
+    async def test_control_commands_without_scheduler(
+        self, server_no_scheduler: HermesServer
+    ) -> None:
+        """Control commands should return error when no scheduler attached."""
+        assert server_no_scheduler._server is not None
+        port = server_no_scheduler._server.sockets[0].getsockname()[1]
+
+        async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+            await asyncio.wait_for(ws.recv(), timeout=2.0)  # Schema
+
+            # Test all control commands
+            for action in ["pause", "resume", "reset", "step"]:
+                params = {"count": 1} if action == "step" else {}
+                await ws.send(json.dumps({"action": action, "params": params}))
+                response = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+
+                assert response["type"] == "error", f"{action} should return error"
+                assert "No scheduler" in response["message"]
+
+    @pytest.mark.asyncio
+    async def test_set_invalid_value_type(self, server_no_scheduler: HermesServer) -> None:
+        """Set command with invalid value type should return error."""
+        assert server_no_scheduler._server is not None
+        port = server_no_scheduler._server.sockets[0].getsockname()[1]
+
+        async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+            await asyncio.wait_for(ws.recv(), timeout=2.0)  # Schema
+
+            # Send set with non-numeric value
+            await ws.send(
+                json.dumps(
+                    {
+                        "action": "set",
+                        "params": {"signal": "sensor.temperature", "value": "not_a_number"},
+                    }
+                )
+            )
+            response = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+
+            assert response["type"] == "error"
+            assert "Invalid value" in response["message"]
+
+    @pytest.mark.asyncio
+    async def test_binary_message_from_client(self, server_no_scheduler: HermesServer) -> None:
+        """Server should handle binary messages from client gracefully."""
+        assert server_no_scheduler._server is not None
+        port = server_no_scheduler._server.sockets[0].getsockname()[1]
+
+        async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+            await asyncio.wait_for(ws.recv(), timeout=2.0)  # Schema
+
+            # Send binary data (not expected from client)
+            await ws.send(b"\x00\x01\x02\x03")
+
+            # Connection should still work - send a valid command
+            await ws.send(json.dumps({"action": "subscribe", "params": {"signals": []}}))
+            response = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert response["type"] == "ack"
+
+    @pytest.mark.asyncio
+    async def test_broadcast_telemetry_no_clients(
+        self, shm_with_signals: SharedMemoryManager
+    ) -> None:
+        """Broadcast telemetry with no clients should not error."""
+        config = ServerConfig(host="127.0.0.1", port=0)
+        server = HermesServer(shm_with_signals, config=config)
+        await server.start_background()
+
+        try:
+            # No clients connected - should not raise
+            await server.broadcast_telemetry()
+        finally:
+            await server.stop()
+
+    @pytest.mark.asyncio
+    async def test_broadcast_event_no_clients(
+        self, shm_with_signals: SharedMemoryManager, mock_scheduler: MockScheduler
+    ) -> None:
+        """Broadcast event with no clients should not error."""
+        config = ServerConfig(host="127.0.0.1", port=0)
+        server = HermesServer(shm_with_signals, mock_scheduler, config)
+        await server.start_background()
+
+        try:
+            # No clients - calling pause should broadcast event without error
+            mock_scheduler.paused = False
+
+            # Connect briefly then disconnect
+            port = server._server.sockets[0].getsockname()[1]
+            async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+                await asyncio.wait_for(ws.recv(), timeout=2.0)  # Schema
+
+            # Wait for disconnect to process
+            await asyncio.sleep(0.1)
+            assert server.client_count == 0
+
+            # Now trigger event broadcast with no clients - should not error
+            await server._broadcast_event(EventType.PAUSED)
+
+        finally:
+            await server.stop()
+
+    @pytest.mark.asyncio
+    async def test_telemetry_send_failure_handled(
+        self, shm_with_signals: SharedMemoryManager
+    ) -> None:
+        """Telemetry send failure should be logged but not crash server."""
+        config = ServerConfig(host="127.0.0.1", port=0)
+        server = HermesServer(shm_with_signals, config=config)
+        await server.start_background()
+
+        try:
+            assert server._server is not None
+            port = server._server.sockets[0].getsockname()[1]
+
+            async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+                await asyncio.wait_for(ws.recv(), timeout=2.0)  # Schema
+
+                # Subscribe
+                await ws.send(json.dumps({"action": "subscribe", "params": {"signals": ["*"]}}))
+                await asyncio.wait_for(ws.recv(), timeout=2.0)  # Ack
+
+                # Force close the websocket from client side
+                await ws.close()
+
+            # Give server time to process disconnect
+            await asyncio.sleep(0.1)
+
+            # Server should still be running and not crash when broadcasting
+            # to a client that was just connected
+            await server.broadcast_telemetry()
+            assert server.is_running
+
+        finally:
+            await server.stop()
