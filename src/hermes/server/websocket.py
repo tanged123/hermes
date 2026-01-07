@@ -413,8 +413,18 @@ class HermesServer:
 
         Args:
             rate_hz: Telemetry rate in Hz (default from config)
+
+        Raises:
+            ValueError: If the effective rate is <= 0
         """
-        hz = rate_hz or self._config.telemetry_hz
+        hz = rate_hz if rate_hz is not None else self._config.telemetry_hz
+
+        if hz <= 0:
+            raise ValueError(
+                f"telemetry_hz must be positive, got {hz}. "
+                f"Check rate_hz parameter or self._config.telemetry_hz."
+            )
+
         interval = 1.0 / hz
 
         log.info("Starting telemetry loop", rate_hz=hz)

@@ -85,16 +85,6 @@ def run(config_path: Path, verbose: bool, quiet: bool, no_server: bool, port: in
         mode=config.execution.mode.value,
     )
 
-    # Set up signal handling for graceful shutdown
-    shutdown_event = asyncio.Event()
-
-    def handle_signal(signum: int, _frame: object) -> None:
-        log.info("Received signal, stopping simulation", signal=signum)
-        shutdown_event.set()
-
-    signal.signal(signal.SIGINT, handle_signal)
-    signal.signal(signal.SIGTERM, handle_signal)
-
     # Run simulation
     try:
         with ProcessManager(config) as pm:
@@ -117,6 +107,18 @@ def run(config_path: Path, verbose: bool, quiet: bool, no_server: bool, port: in
             )
 
             async def main() -> None:
+                # Set up signal handling for graceful shutdown
+                # Must be inside async context to get the running loop
+                shutdown_event = asyncio.Event()
+                loop = asyncio.get_running_loop()
+
+                def handle_signal(signum: int, _frame: object) -> None:
+                    log.info("Received signal, stopping simulation", signal=signum)
+                    loop.call_soon_threadsafe(shutdown_event.set)
+
+                signal.signal(signal.SIGINT, handle_signal)
+                signal.signal(signal.SIGTERM, handle_signal)
+
                 tasks: list[asyncio.Task[Any]] = []
                 server: HermesServer | None = None
 

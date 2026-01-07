@@ -415,6 +415,37 @@ class TestHermesServerTelemetry:
             with pytest.raises(asyncio.TimeoutError):
                 await asyncio.wait_for(ws.recv(), timeout=0.2)
 
+    @pytest.mark.asyncio
+    async def test_telemetry_loop_zero_rate_raises(
+        self, shm_with_signals: SharedMemoryManager
+    ) -> None:
+        """Telemetry loop with zero rate should raise ValueError."""
+        server = HermesServer(shm_with_signals)
+
+        with pytest.raises(ValueError, match="telemetry_hz must be positive"):
+            await server.telemetry_loop(rate_hz=0.0)
+
+    @pytest.mark.asyncio
+    async def test_telemetry_loop_negative_rate_raises(
+        self, shm_with_signals: SharedMemoryManager
+    ) -> None:
+        """Telemetry loop with negative rate should raise ValueError."""
+        server = HermesServer(shm_with_signals)
+
+        with pytest.raises(ValueError, match="telemetry_hz must be positive"):
+            await server.telemetry_loop(rate_hz=-10.0)
+
+    @pytest.mark.asyncio
+    async def test_telemetry_loop_config_zero_rate_raises(
+        self, shm_with_signals: SharedMemoryManager
+    ) -> None:
+        """Telemetry loop with zero rate in config should raise ValueError."""
+        config = ServerConfig(host="127.0.0.1", port=0, telemetry_hz=0.0)
+        server = HermesServer(shm_with_signals, config=config)
+
+        with pytest.raises(ValueError, match="telemetry_hz must be positive"):
+            await server.telemetry_loop()
+
 
 class TestHermesServerInvalidCommands:
     """Tests for invalid command handling."""

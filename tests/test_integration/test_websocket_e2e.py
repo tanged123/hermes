@@ -566,11 +566,14 @@ class TestTelemetryInterleaving:
             await ws.send(json.dumps({"action": "subscribe", "params": {"signals": ["*"]}}))
 
             # Helper to get next JSON message
-            async def get_json_message() -> dict:
-                while True:
+            async def get_json_message(max_attempts: int = 50) -> dict:
+                for _ in range(max_attempts):
                     data = await asyncio.wait_for(ws.recv(), timeout=2.0)
                     if isinstance(data, str):
                         return json.loads(data)
+                raise RuntimeError(
+                    f"No JSON message received after {max_attempts} attempts (all binary)"
+                )
 
             ack = await get_json_message()
             assert ack["action"] == "subscribe"

@@ -157,7 +157,7 @@ class TestTelemetryEncoderEncode:
         """Should raise KeyError for unknown signal."""
         encoder = TelemetryEncoder(shm_with_signals, ["nonexistent.signal"])
 
-        with pytest.raises(KeyError, match="nonexistent.signal"):
+        with pytest.raises(KeyError, match=r"nonexistent\.signal"):
             encoder.encode()
 
 
