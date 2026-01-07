@@ -127,6 +127,11 @@ async def main(host: str = "127.0.0.1", port: int = 8765) -> int:
         print("\n\nClient stopped.")
         return 0
     except Exception as e:
+        # Check for clean WebSocket close
+        error_str = str(e)
+        if "1001" in error_str or "going away" in error_str:
+            print("\n\nServer disconnected (simulation stopped).")
+            return 0
         print(f"Error: {e}")
         return 1
 
