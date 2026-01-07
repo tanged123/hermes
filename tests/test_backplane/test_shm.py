@@ -191,3 +191,118 @@ class TestSharedMemoryManager:
             assert shm.get_time_ns() == one_year_ns
         finally:
             shm.destroy()
+
+    def test_name_property(self, shm_name: str) -> None:
+        """Should return the shared memory name."""
+        shm = SharedMemoryManager(shm_name)
+        assert shm.name == shm_name
+
+    def test_is_attached_property(
+        self, shm_name: str, test_signals: list[SignalDescriptor]
+    ) -> None:
+        """Should track attachment state."""
+        shm = SharedMemoryManager(shm_name)
+        assert shm.is_attached is False
+
+        shm.create(test_signals)
+        assert shm.is_attached is True
+
+        shm.detach()
+        assert shm.is_attached is False
+
+        shm.destroy()
+
+    def test_create_already_attached_raises(
+        self, shm_name: str, test_signals: list[SignalDescriptor]
+    ) -> None:
+        """Should raise if creating while already attached."""
+        shm = SharedMemoryManager(shm_name)
+        try:
+            shm.create(test_signals)
+            with pytest.raises(RuntimeError, match="Already attached"):
+                shm.create(test_signals)
+        finally:
+            shm.destroy()
+
+    def test_attach_already_attached_raises(
+        self, shm_name: str, test_signals: list[SignalDescriptor]
+    ) -> None:
+        """Should raise if attaching while already attached."""
+        creator = SharedMemoryManager(shm_name)
+        try:
+            creator.create(test_signals)
+
+            client = SharedMemoryManager(shm_name)
+            client.attach()
+            with pytest.raises(RuntimeError, match="Already attached"):
+                client.attach()
+            client.detach()
+        finally:
+            creator.destroy()
+
+    def test_get_signal_not_attached_raises(self, shm_name: str) -> None:
+        """Should raise if reading signal when not attached."""
+        shm = SharedMemoryManager(shm_name)
+        with pytest.raises(RuntimeError, match="Not attached"):
+            shm.get_signal("test")
+
+    def test_set_signal_not_attached_raises(self, shm_name: str) -> None:
+        """Should raise if writing signal when not attached."""
+        shm = SharedMemoryManager(shm_name)
+        with pytest.raises(RuntimeError, match="Not attached"):
+            shm.set_signal("test", 1.0)
+
+    def test_get_frame_not_attached_raises(self, shm_name: str) -> None:
+        """Should raise if reading frame when not attached."""
+        shm = SharedMemoryManager(shm_name)
+        with pytest.raises(RuntimeError, match="Not attached"):
+            shm.get_frame()
+
+    def test_set_frame_not_attached_raises(self, shm_name: str) -> None:
+        """Should raise if writing frame when not attached."""
+        shm = SharedMemoryManager(shm_name)
+        with pytest.raises(RuntimeError, match="Not attached"):
+            shm.set_frame(1)
+
+    def test_get_time_ns_not_attached_raises(self, shm_name: str) -> None:
+        """Should raise if reading time_ns when not attached."""
+        shm = SharedMemoryManager(shm_name)
+        with pytest.raises(RuntimeError, match="Not attached"):
+            shm.get_time_ns()
+
+    def test_set_time_ns_not_attached_raises(self, shm_name: str) -> None:
+        """Should raise if writing time_ns when not attached."""
+        shm = SharedMemoryManager(shm_name)
+        with pytest.raises(RuntimeError, match="Not attached"):
+            shm.set_time_ns(1)
+
+    def test_context_manager(self, shm_name: str, test_signals: list[SignalDescriptor]) -> None:
+        """Should work as context manager."""
+        shm = SharedMemoryManager(shm_name)
+        shm.create(test_signals)
+        try:
+            with shm:
+                assert shm.is_attached is True
+            # After exit, should be detached
+            assert shm.is_attached is False
+        finally:
+            # Clean up the underlying shared memory
+            import contextlib
+
+            import posix_ipc
+
+            with contextlib.suppress(posix_ipc.ExistentialError):
+                posix_ipc.unlink_shared_memory(shm_name)
+
+    def test_signal_names(self, shm_name: str, test_signals: list[SignalDescriptor]) -> None:
+        """Should return list of all signal names."""
+        shm = SharedMemoryManager(shm_name)
+        try:
+            shm.create(test_signals)
+            names = shm.signal_names()
+            assert "position.x" in names
+            assert "position.y" in names
+            assert "velocity" in names
+            assert len(names) == 3
+        finally:
+            shm.destroy()

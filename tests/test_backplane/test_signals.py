@@ -129,3 +129,27 @@ class TestSignalRegistry:
         assert len(all_sigs) == 2
         assert "a.x" in all_sigs
         assert "b.y" in all_sigs
+
+    def test_len(self) -> None:
+        """Should return count of registered signals."""
+        registry = SignalRegistry()
+        assert len(registry) == 0
+
+        registry.register("mod", SignalDescriptor(name="a"))
+        assert len(registry) == 1
+
+        registry.register("mod", SignalDescriptor(name="b"))
+        assert len(registry) == 2
+
+    def test_contains(self) -> None:
+        """Should support 'in' operator for qualified names."""
+        registry = SignalRegistry()
+        registry.register("mod", SignalDescriptor(name="signal"))
+
+        assert "mod.signal" in registry
+        assert "nonexistent.signal" not in registry
+
+    def test_list_module_empty(self) -> None:
+        """Should return empty list for module with no signals."""
+        registry = SignalRegistry()
+        assert registry.list_module("nonexistent") == []

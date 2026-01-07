@@ -23,7 +23,8 @@
       "Bash(git commit:*)",
       "Bash(git push)",
       "Bash(timeout 30 nix develop:*)",
-      "Bash(./scripts/ci.sh:*)"
+      "Bash(./scripts/ci.sh:*)",
+      "Bash(timeout 60 nix develop --command python -m pytest:*)"
     ]
   }
 }
