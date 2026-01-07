@@ -2,7 +2,31 @@
   "permissions": {
     "allow": [
       "Bash(mypy:*)",
-      "Bash(nix develop:*)"
+      "Bash(nix develop:*)",
+      "Bash(mkdir:*)",
+      "Skill(beads:list)",
+      "Bash(bd list:*)",
+      "Bash(bd create:*)",
+      "Bash(bd dep tree:*)",
+      "Bash(bd blocked)",
+      "Bash(bd sync:*)",
+      "Bash(bd update:*)",
+      "Bash(bd dep remove:*)",
+      "Bash(bd dep add:*)",
+      "Bash(bd ready:*)",
+      "Bash(pip install:*)",
+      "Bash(ls:*)",
+      "Bash(uv pip install:*)",
+      "Bash(bd close:*)",
+      "Bash(bd show:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(timeout 30 nix develop:*)",
+      "Bash(./scripts/ci.sh:*)",
+      "Bash(timeout 60 nix develop --command python -m pytest:*)",
+      "Bash(timeout 120 nix develop --command python -m pytest:*)",
+      "Bash(timeout 180 nix develop --command python -m pytest:*)"
     ]
   }
 }

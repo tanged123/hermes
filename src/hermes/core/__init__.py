@@ -1,20 +1,33 @@
-"""Core abstractions for Hermes."""
+"""Core configuration, process management, and scheduling for Hermes."""
 
-from hermes.core.config import HermesConfig, ModuleConfig, WireConfig
-from hermes.core.module import ModuleAdapter
-from hermes.core.scheduler import ExecutionMode, Scheduler, SchedulerConfig
-from hermes.core.signal import SignalBus, SignalDescriptor, SignalType, Wire
+from hermes.core.config import (
+    ExecutionConfig,
+    ExecutionMode,
+    HermesConfig,
+    ModuleConfig,
+    ModuleType,
+    ServerConfig,
+    SignalConfig,
+    WireConfig,
+)
+from hermes.core.process import ModuleInfo, ModuleProcess, ModuleState, ProcessManager
+from hermes.core.scheduler import Scheduler
 
 __all__ = [
-    "ModuleAdapter",
-    "SignalBus",
-    "SignalDescriptor",
-    "SignalType",
-    "Wire",
-    "Scheduler",
-    "SchedulerConfig",
-    "ExecutionMode",
+    # Configuration
     "HermesConfig",
     "ModuleConfig",
+    "ModuleType",
+    "SignalConfig",
     "WireConfig",
+    "ExecutionConfig",
+    "ExecutionMode",
+    "ServerConfig",
+    # Process management
+    "ProcessManager",
+    "ModuleProcess",
+    "ModuleState",
+    "ModuleInfo",
+    # Scheduling
+    "Scheduler",
 ]

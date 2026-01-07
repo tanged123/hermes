@@ -99,11 +99,11 @@
         "vulcan": "vulcan"
       },
       "locked": {
-        "lastModified": 1767589206,
-        "narHash": "sha256-Tssyq2/HGNnQHkFpj7GSbBWR23Hh6Q3VjlGRUmh1oKg=",
+        "lastModified": 1767685853,
+        "narHash": "sha256-bYD56xO+RaG1TvRKBsO1N3CCm5O55UgXzAPd46SFqdo=",
         "owner": "tanged123",
         "repo": "icarus",
-        "rev": "7335f4e26cde58684fcb1273fbf2bc66f812858e",
+        "rev": "bd99de5c42ee5d522b9607a0af6bf56f34192bbb",
         "type": "github"
       },
       "original": {

@@ -1,186 +1,277 @@
-"""Synchronous simulation scheduler."""
+"""Runtime simulation scheduler for Hermes.
+
+This module provides the Scheduler class for controlling simulation
+execution with support for multiple operating modes.
+
+Operating Modes:
+    realtime: Paced to wall-clock time (for HIL, visualization)
+    afap: As fast as possible (for batch runs, Monte Carlo)
+    single_frame: Manual stepping (for debugging, scripted scenarios)
+
+Determinism:
+    Time is tracked internally as integer nanoseconds to ensure
+    reproducibility across runs and platforms. The float `time` property
+    is provided for API convenience, while `time_ns` gives the exact value.
+
+    For rates that don't divide evenly into 1 billion (e.g., 600 Hz),
+    the timestep is rounded to the nearest nanosecond. This introduces
+    bounded error (~0.72ms/hour at 600 Hz) but remains deterministic.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable, Coroutine
-from dataclasses import dataclass
-from enum import Enum
-from typing import TYPE_CHECKING, Any
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
+
+import structlog
 
 if TYPE_CHECKING:
-    from hermes.core.signal import SignalBus
+    from hermes.core.config import ExecutionConfig, ExecutionMode
+    from hermes.core.process import ProcessManager
 
-
-class ExecutionMode(Enum):
-    """Scheduler execution modes."""
-
-    AS_FAST_AS_POSSIBLE = "afap"  # No pacing, maximum speed
-    REAL_TIME = "realtime"  # Wall-clock pacing
-    PAUSED = "paused"  # Waiting for step command
-
-
-@dataclass
-class SchedulerConfig:
-    """Scheduler configuration."""
-
-    dt: float = 0.01  # 100 Hz default
-    mode: ExecutionMode = ExecutionMode.AS_FAST_AS_POSSIBLE
-    end_time: float | None = None  # None = run forever
+log = structlog.get_logger()
 
 
 class Scheduler:
-    """Synchronous simulation scheduler.
+    """Runtime simulation scheduler.
 
-    Manages the simulation loop, stepping all modules and routing signals
-    each frame. Supports multiple execution modes including real-time pacing.
+    Controls simulation execution with support for realtime, AFAP,
+    and single-frame modes. Coordinates with ProcessManager for
+    module stepping and provides pause/resume/stop control.
+
+    Example:
+        >>> scheduler = Scheduler(process_mgr, config.execution)
+        >>> scheduler.stage()
+        >>> await scheduler.run(callback=my_telemetry_fn)
     """
 
-    def __init__(self, bus: SignalBus, config: SchedulerConfig) -> None:
-        """Initialize scheduler.
+    # Nanoseconds per second (for time conversions)
+    NANOSECONDS_PER_SECOND: int = 1_000_000_000
+
+    def __init__(
+        self,
+        process_mgr: ProcessManager,
+        config: ExecutionConfig,
+    ) -> None:
+        """Initialize the scheduler.
 
         Args:
-            bus: Signal bus with registered modules
-            config: Scheduler configuration
+            process_mgr: ProcessManager for controlling modules
+            config: Execution configuration (mode, rate, end_time)
         """
-        self._bus = bus
+        self._pm = process_mgr
         self._config = config
-        self._time: float = 0.0
         self._frame: int = 0
+        self._time_ns: int = 0  # Time in nanoseconds for determinism
+        self._dt_ns: int = config.get_dt_ns()  # Precomputed timestep in ns
         self._running: bool = False
-        self._staged: bool = False
-
-    @property
-    def time(self) -> float:
-        """Current simulation time (seconds)."""
-        return self._time
+        self._paused: bool = False
 
     @property
     def frame(self) -> int:
-        """Current frame number."""
+        """Current simulation frame number."""
         return self._frame
 
     @property
-    def dt(self) -> float:
-        """Timestep (seconds)."""
-        return self._config.dt
+    def time(self) -> float:
+        """Current simulation time in seconds.
+
+        This is derived from `time_ns` for API convenience.
+        For deterministic comparisons, use `time_ns` instead.
+        """
+        return self._time_ns / self.NANOSECONDS_PER_SECOND
 
     @property
-    def is_running(self) -> bool:
-        """Whether the run loop is active."""
+    def time_ns(self) -> int:
+        """Current simulation time in nanoseconds.
+
+        This is the authoritative time value for deterministic simulations.
+        Use this for exact comparisons and reproducibility.
+        """
+        return self._time_ns
+
+    @property
+    def dt(self) -> float:
+        """Timestep in seconds.
+
+        Derived from `dt_ns` for API convenience.
+        """
+        return self._dt_ns / self.NANOSECONDS_PER_SECOND
+
+    @property
+    def dt_ns(self) -> int:
+        """Timestep in nanoseconds.
+
+        This is the authoritative timestep value for deterministic simulations.
+        """
+        return self._dt_ns
+
+    @property
+    def running(self) -> bool:
+        """Whether the simulation run loop is active."""
         return self._running
 
     @property
-    def is_staged(self) -> bool:
-        """Whether modules have been staged."""
-        return self._staged
+    def paused(self) -> bool:
+        """Whether the simulation is paused."""
+        return self._paused
+
+    @property
+    def mode(self) -> ExecutionMode:
+        """Current execution mode."""
+        return self._config.mode
 
     def stage(self) -> None:
-        """Stage all modules.
+        """Stage simulation for execution.
 
-        Prepares all registered modules for execution by calling
-        their stage() method. Must be called before step() or run().
+        Calls stage() on all modules via ProcessManager and resets
+        frame/time counters to zero.
         """
-        for module in self._bus.modules.values():
-            module.stage()
-        self._time = 0.0
+        log.info("Staging simulation")
+        self._pm.stage_all()
         self._frame = 0
-        self._staged = True
+        self._time_ns = 0
+        self._pm.update_time(self._frame, self._time_ns)
+        log.debug("Simulation staged", frame=self._frame, time_ns=self._time_ns)
 
-    def step(self) -> None:
-        """Execute one simulation frame.
+    def step(self, count: int = 1) -> None:
+        """Execute N simulation frames.
 
-        Steps all modules, routes signals, and advances time.
-        Modules are stepped in registration order.
+        Args:
+            count: Number of frames to execute (default: 1)
 
         Raises:
-            RuntimeError: If not staged
+            ValueError: If count is not positive
         """
-        if not self._staged:
-            raise RuntimeError("Scheduler not staged. Call stage() first.")
+        if count < 1:
+            raise ValueError(f"Step count must be positive, got {count}")
 
-        dt = self._config.dt
+        for _ in range(count):
+            # Update time before step so modules see current time
+            self._pm.update_time(self._frame, self._time_ns)
 
-        # Step all modules in registration order
-        # TODO: Topological sort based on wiring dependencies
-        for module in self._bus.modules.values():
-            module.step(dt)
+            # Execute all modules for this frame
+            self._pm.step_all()
 
-        # Route signals between modules
-        self._bus.route()
+            # Advance simulation state using integer arithmetic for determinism
+            self._frame += 1
+            self._time_ns = self._frame * self._dt_ns
 
-        # Advance time
-        self._time += dt
-        self._frame += 1
+        log.debug("Stepped", frames=count, frame=self._frame, time_ns=self._time_ns)
 
     def reset(self) -> None:
-        """Reset all modules to initial state.
+        """Reset simulation to initial state.
 
-        Resets time to zero and calls reset() on all modules.
-        Simulation remains staged after reset.
+        Resets frame and time counters. Note: does not re-stage modules.
         """
-        for module in self._bus.modules.values():
-            module.reset()
-        self._time = 0.0
         self._frame = 0
+        self._time_ns = 0
+        self._pm.update_time(self._frame, self._time_ns)
+        log.info("Simulation reset")
 
     async def run(
         self,
-        callback: Callable[[int, float], Coroutine[Any, Any, None]] | None = None,
+        callback: Callable[[int, float], Awaitable[None]] | None = None,
     ) -> None:
-        """Run simulation loop until end_time or stopped.
+        """Run simulation loop until stopped or end_time reached.
+
+        In realtime mode, paces execution to wall-clock time.
+        In AFAP mode, runs as fast as possible.
+        In single_frame mode, waits for explicit step() calls.
 
         Args:
-            callback: Optional async callback called each frame with (frame, time).
-                     Used for telemetry streaming.
+            callback: Optional async callback invoked after each frame
+                     with (frame_number, simulation_time_seconds)
         """
-        if not self._staged:
-            raise RuntimeError("Scheduler not staged. Call stage() first.")
+        from hermes.core.config import ExecutionMode
 
         self._running = True
         wall_start = time.perf_counter()
+        pause_start: float | None = None  # Track when pause began
+
+        # Get end time in nanoseconds for deterministic comparison
+        end_time_ns = self._config.get_end_time_ns()
+
+        log.info(
+            "Starting simulation loop",
+            mode=self._config.mode.value,
+            rate_hz=self._config.rate_hz,
+            end_time=self._config.end_time,
+        )
 
         try:
             while self._running:
-                # Check end condition
-                if self._config.end_time is not None and self._time >= self._config.end_time:
+                # Check end condition using integer comparison for determinism
+                if end_time_ns is not None and self._time_ns >= end_time_ns:
+                    log.info("End time reached", time_ns=self._time_ns)
                     break
 
-                # Check for pause mode
-                if self._config.mode == ExecutionMode.PAUSED:
-                    await asyncio.sleep(0.1)
+                # Pause handling with wall_start adjustment for realtime mode
+                if self._paused:
+                    if pause_start is None:
+                        pause_start = time.perf_counter()
+                    await asyncio.sleep(0.01)
+                    continue
+                elif pause_start is not None:
+                    # Resuming from pause: adjust wall_start to account for pause duration
+                    pause_duration = time.perf_counter() - pause_start
+                    wall_start += pause_duration
+                    pause_start = None
+
+                # Single frame mode waits for explicit step()
+                if self._config.mode == ExecutionMode.SINGLE_FRAME:
+                    await asyncio.sleep(0.01)
                     continue
 
-                # Execute frame
+                # Execute one frame
                 self.step()
 
-                # Optional callback (for telemetry)
+                # Invoke callback if provided (uses float time for API convenience)
                 if callback is not None:
-                    await callback(self._frame, self._time)
+                    await callback(self._frame, self.time)
 
-                # Real-time pacing
-                if self._config.mode == ExecutionMode.REAL_TIME:
-                    target_wall = wall_start + self._time
+                # Real-time pacing (uses float time for wall-clock sync)
+                if self._config.mode == ExecutionMode.REALTIME:
+                    target_wall = wall_start + self.time
                     sleep_time = target_wall - time.perf_counter()
                     if sleep_time > 0:
                         await asyncio.sleep(sleep_time)
-                else:
-                    # Yield to event loop occasionally in AFAP mode
-                    if self._frame % 100 == 0:
-                        await asyncio.sleep(0)
+
+                # Yield to event loop periodically in AFAP mode
+                if self._config.mode == ExecutionMode.AFAP and self._frame % 100 == 0:
+                    await asyncio.sleep(0)
 
         finally:
             self._running = False
 
-    def stop(self) -> None:
-        """Stop the run loop."""
-        self._running = False
+        log.info(
+            "Simulation loop ended",
+            frames=self._frame,
+            time_ns=self._time_ns,
+        )
 
     def pause(self) -> None:
-        """Pause execution (switch to PAUSED mode)."""
-        self._config.mode = ExecutionMode.PAUSED
+        """Pause the run loop.
 
-    def resume(self, mode: ExecutionMode = ExecutionMode.AS_FAST_AS_POSSIBLE) -> None:
-        """Resume execution with specified mode."""
-        self._config.mode = mode
+        The simulation will stop advancing but remain in the run loop.
+        Use resume() to continue.
+        """
+        if not self._paused:
+            self._paused = True
+            log.info("Simulation paused", frame=self._frame)
+
+    def resume(self) -> None:
+        """Resume the run loop after pause."""
+        if self._paused:
+            self._paused = False
+            log.info("Simulation resumed", frame=self._frame)
+
+    def stop(self) -> None:
+        """Stop the run loop.
+
+        The simulation will exit the run() method cleanly.
+        """
+        self._running = False
+        log.info("Simulation stopped", frame=self._frame)
