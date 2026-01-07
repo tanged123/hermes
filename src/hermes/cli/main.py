@@ -6,8 +6,10 @@ Provides commands for running and managing simulations from the command line.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import signal
 from pathlib import Path
+from typing import Any
 
 import click
 import structlog
@@ -16,6 +18,8 @@ from hermes import __version__
 from hermes.core.config import HermesConfig
 from hermes.core.process import ProcessManager
 from hermes.core.scheduler import Scheduler
+from hermes.server import HermesServer
+from hermes.server import ServerConfig as WsServerConfig
 
 # Configure structlog for console output
 structlog.configure(
@@ -50,7 +54,19 @@ def cli() -> None:
     is_flag=True,
     help="Suppress progress output",
 )
-def run(config_path: Path, verbose: bool, quiet: bool) -> None:
+@click.option(
+    "--no-server",
+    is_flag=True,
+    help="Run without WebSocket server",
+)
+@click.option(
+    "--port",
+    "-p",
+    type=int,
+    default=None,
+    help="WebSocket server port (overrides config)",
+)
+def run(config_path: Path, verbose: bool, quiet: bool, no_server: bool, port: int | None) -> None:
     """Run simulation from configuration file.
 
     CONFIG_PATH: Path to YAML configuration file
@@ -69,46 +85,99 @@ def run(config_path: Path, verbose: bool, quiet: bool) -> None:
         mode=config.execution.mode.value,
     )
 
-    # Set up signal handling for graceful shutdown
-    scheduler: Scheduler | None = None
-
-    def handle_signal(signum: int, _frame: object) -> None:
-        nonlocal scheduler
-        log.info("Received signal, stopping simulation", signal=signum)
-        if scheduler is not None:
-            scheduler.stop()
-
-    signal.signal(signal.SIGINT, handle_signal)
-    signal.signal(signal.SIGTERM, handle_signal)
-
     # Run simulation
     try:
         with ProcessManager(config) as pm:
             pm.load_all()
 
-            scheduler = Scheduler(pm, config.execution)
+            sched = Scheduler(pm, config.execution)
             log.info("Staging simulation")
-            scheduler.stage()
+            sched.stage()
+
+            # Determine server settings
+            server_enabled = config.server.enabled and not no_server
+            server_port = port if port is not None else config.server.port
 
             log.info(
                 "Running simulation",
                 mode=config.execution.mode.value,
                 rate_hz=config.execution.rate_hz,
                 end_time=config.execution.end_time,
+                server=server_enabled,
             )
 
-            # Create telemetry callback
-            async def telemetry_callback(frame: int, time: float) -> None:
-                if not quiet and frame % 100 == 0:
-                    log.info("Frame", frame=frame, time=f"{time:.3f}s")
+            async def main() -> None:
+                # Set up signal handling for graceful shutdown
+                # Must be inside async context to get the running loop
+                shutdown_event = asyncio.Event()
+                loop = asyncio.get_running_loop()
 
-            # Run the simulation
-            asyncio.run(scheduler.run(callback=telemetry_callback))
+                def handle_signal(signum: int, _frame: object) -> None:
+                    log.info("Received signal, stopping simulation", signal=signum)
+                    loop.call_soon_threadsafe(shutdown_event.set)
+
+                signal.signal(signal.SIGINT, handle_signal)
+                signal.signal(signal.SIGTERM, handle_signal)
+
+                tasks: list[asyncio.Task[Any]] = []
+                server: HermesServer | None = None
+
+                try:
+                    # Start WebSocket server if enabled
+                    if server_enabled and pm.shm is not None:
+                        ws_config = WsServerConfig(
+                            host=config.server.host,
+                            port=server_port,
+                            telemetry_hz=config.server.telemetry_hz,
+                        )
+                        server = HermesServer(pm.shm, sched, ws_config)
+                        await server.start_background()
+                        tasks.append(server.start_telemetry_loop())
+                        log.info("WebSocket server started", port=server_port)
+
+                    # Create telemetry callback
+                    async def telemetry_callback(frame: int, time: float) -> None:
+                        if not quiet and frame % 100 == 0:
+                            log.info("Frame", frame=frame, time=f"{time:.3f}s")
+
+                    # Run simulation until complete or shutdown signal
+                    async def run_with_shutdown() -> None:
+                        sim_task = asyncio.create_task(sched.run(callback=telemetry_callback))
+                        shutdown_task = asyncio.create_task(shutdown_event.wait())
+
+                        done, pending = await asyncio.wait(
+                            [sim_task, shutdown_task],
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+
+                        # Cancel pending tasks
+                        for task in pending:
+                            task.cancel()
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await task
+
+                        # Stop scheduler if shutdown was signaled
+                        if shutdown_task in done:
+                            sched.stop()
+
+                    await run_with_shutdown()
+
+                finally:
+                    # Cleanup
+                    for task in tasks:
+                        task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await task
+
+                    if server is not None:
+                        await server.stop()
+
+            asyncio.run(main())
 
             log.info(
                 "Simulation complete",
-                frames=scheduler.frame,
-                time=f"{scheduler.time:.3f}s",
+                frames=sched.frame,
+                time=f"{sched.time:.3f}s",
             )
     except KeyboardInterrupt:
         log.info("Interrupted by user")

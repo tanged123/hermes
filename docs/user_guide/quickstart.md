@@ -233,6 +233,27 @@ scheduler.step(1)   # Advance one frame
 scheduler.step(10)  # Advance ten frames
 ```
 
+## WebSocket Server
+
+Enable the WebSocket server for real-time telemetry streaming:
+
+```yaml
+server:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8765
+  telemetry_hz: 60.0
+```
+
+Connect with a WebSocket client to:
+- Receive signal schema on connect
+- Subscribe to signals (supports wildcards: `*`, `module.*`)
+- Receive binary telemetry at the configured rate
+- Send control commands (pause, resume, step, reset)
+- Inject signal values
+
+See the [WebSocket Guide](websocket.md) for full protocol details.
+
 ## Signal Wiring
 
 Connect signals between modules:
@@ -264,6 +285,7 @@ wiring:
 ## Next Steps
 
 - Read the [Architecture Guide](architecture.md) for detailed class documentation
+- Read the [WebSocket Guide](websocket.md) for real-time telemetry streaming
 - See `examples/` for more configuration examples
 - Check `tests/` for usage patterns
 

@@ -1,0 +1,45 @@
+# Hermes Configuration - WebSocket Server Example
+#
+# This configuration demonstrates the WebSocket server for real-time
+# telemetry streaming to external clients (like Daedalus visualization).
+#
+# Run with: python -m hermes.cli.main run examples/websocket_telemetry.yaml
+# Then connect: python examples/websocket_client.py
+
+version: "0.2"
+
+modules:
+  mock_vehicle:
+    type: script
+    script: ./mock_module.py
+    signals:
+      - name: position.x
+        type: f64
+        unit: m
+        writable: false
+        published: true
+      - name: position.y
+        type: f64
+        unit: m
+        writable: false
+        published: true
+      - name: velocity.x
+        type: f64
+        unit: m/s
+        writable: false
+        published: true
+      - name: velocity.y
+        type: f64
+        unit: m/s
+        writable: false
+        published: true
+
+execution:
+  mode: realtime         # Realtime pacing for visualization
+  rate_hz: 1000.0         # Simulation rate in Hz
+
+server:
+  enabled: true          # Enable WebSocket server
+  host: "127.0.0.1"      # Bind to localhost only
+  port: 8765             # Default port
+  telemetry_hz: 60.0     # Stream telemetry at 60 Hz
