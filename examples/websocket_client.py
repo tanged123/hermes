@@ -65,9 +65,15 @@ async def main(host: str = "127.0.0.1", port: int = 8765) -> int:
             print("\n=== Resuming simulation ===")
             await ws.send(json.dumps({"action": "resume"}))
 
-            # Receive ack and event (order may vary)
-            for _ in range(2):
-                msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            # Receive ack and event (order may vary, telemetry may arrive too)
+            json_messages_received = 0
+            while json_messages_received < 2:
+                data = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                if isinstance(data, bytes):
+                    # Skip binary telemetry for now
+                    continue
+                msg = json.loads(data)
+                json_messages_received += 1
                 if msg["type"] == "ack":
                     print(f"Acknowledged: {msg['action']}")
                 elif msg["type"] == "event":
