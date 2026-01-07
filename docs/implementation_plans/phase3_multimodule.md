@@ -3,15 +3,15 @@
 **Goal:** Multiple modules with signal routing
 **Status:** Not Started
 **Blocked By:** Phase 2 Complete
-**Exit Criteria:** Injection module can override simulation inputs via wiring
+**Exit Criteria:** Wire routing works between Python script modules with gain/offset transforms
 
 ---
 
 ## Overview
 
-Phase 3 extends Hermes to support multiple simulation modules with signal wiring between them. This enables test scenarios where external signals can be injected into the simulation (e.g., overriding sensor inputs, commanding actuators).
+Phase 3 extends Hermes to support multiple simulation modules with signal wiring between them. This phase focuses on the **generic infrastructure** for multi-module orchestration using pure Python modules for testing.
 
-With the multi-process IPC architecture, modules are separate processes that communicate through shared memory. Wire routing reads values from source signals and writes to destination signals after each simulation step.
+The infrastructure built here will be reused by Phase 3.5 (Icarus Integration) for actual physics simulation.
 
 ## Architecture Context
 
@@ -24,19 +24,19 @@ With the multi-process IPC architecture, modules are separate processes that com
 │  │                   Shared Memory Backplane                          │ │
 │  │                                                                     │ │
 │  │  ┌───────────────────┐         ┌───────────────────┐              │ │
-│  │  │  Icarus Signals   │ ◄─wire──│ Injection Signals │              │ │
-│  │  │  (Vehicle.*)      │         │ (thrust_cmd, etc) │              │ │
+│  │  │  Physics Signals  │ ◄─wire──│ Injection Signals │              │ │
+│  │  │  (output, state)  │         │ (input_cmd, etc)  │              │ │
 │  │  └───────────────────┘         └───────────────────┘              │ │
 │  │                                                                     │ │
 │  └────────────────────────────────────────────────────────────────────┘ │
 │                    │                        │                            │
 │                    ▼                        ▼                            │
 │  ┌──────────────────────┐    ┌──────────────────────┐                  │
-│  │   Icarus Module      │    │   Injection Module    │                  │
-│  │   (C++ Process)      │    │   (Python Script)     │                  │
+│  │   Physics Module     │    │   Injection Module    │                  │
+│  │   (Python Script)    │    │   (Python Script)     │                  │
 │  │                      │    │                       │                  │
 │  │  • Reads inputs      │    │  • Writes commands    │                  │
-│  │  • Computes physics  │    │  • Scripted values    │                  │
+│  │  • Simple dynamics   │    │  • Scripted values    │                  │
 │  │  • Writes outputs    │    │  • Test scenarios     │                  │
 │  └──────────────────────┘    └──────────────────────┘                  │
 │                                                                          │
@@ -58,8 +58,7 @@ With the multi-process IPC architecture, modules are separate processes that com
 
 ## Task 3.1: Injection Module
 
-**Issue ID:** (create after Phase 2)
-**Priority:** Critical (P0)
+**Priority:** P0 (Critical)
 **Blocked By:** Phase 2
 
 ### Objective
@@ -67,14 +66,14 @@ Create a simple Python module that stores and exposes injectable signals.
 
 ### Deliverables
 - `src/hermes/modules/injection.py`
-- Module runner script
+- Module runner integration
 
 ### Features
 - Configurable signal list from YAML
 - Values persist between steps (no internal dynamics)
 - All signals writable via shared memory
 - Zero initial values
-- Implements module protocol
+- Implements module protocol (stage, step, reset)
 
 ### Configuration
 ```yaml
@@ -83,11 +82,11 @@ modules:
     type: script
     script: hermes.modules.injection
     signals:
-      - name: thrust_command
+      - name: thrust_cmd
         type: f64
         unit: N
         writable: true
-      - name: pitch_command
+      - name: pitch_cmd
         type: f64
         unit: deg
         writable: true
@@ -96,45 +95,39 @@ modules:
 ### Implementation
 ```python
 """Injection module for test signal input."""
-import sys
 from hermes.backplane.shm import SharedMemoryManager
 
+
 class InjectionModule:
-    """Simple module that holds writable signal values."""
+    """Simple module that holds writable signal values.
 
-    def __init__(self, shm_name: str, signals: list[str]) -> None:
-        self._shm = SharedMemoryManager(shm_name)
-        self._shm.attach()
+    Values persist between steps - no internal dynamics.
+    External systems can write to these signals via shared memory
+    or WebSocket commands, and wires route them to physics modules.
+    """
+
+    def __init__(self, module_name: str, shm: SharedMemoryManager, signals: list[str]) -> None:
+        self._name = module_name
+        self._shm = shm
         self._signals = signals
-        self._values: dict[str, float] = {s: 0.0 for s in signals}
 
-    def init(self, config_path: str) -> int:
-        """Initialize module (no-op for injection)."""
-        return 0
-
-    def stage(self) -> int:
-        """Stage module - write initial zeros."""
+    def stage(self) -> None:
+        """Stage module - write initial zeros to all signals."""
         for signal in self._signals:
-            self._shm.set_signal(f"inputs.{signal}", 0.0)
-        return 0
+            self._shm.set_signal(f"{self._name}.{signal}", 0.0)
 
-    def step(self, dt: float) -> int:
-        """Step module - values persist, no dynamics."""
-        return 0
+    def step(self, dt: float) -> None:
+        """Step module - no-op, values persist."""
+        pass
 
-    def reset(self) -> int:
-        """Reset to zeros."""
+    def reset(self) -> None:
+        """Reset all signals to zero."""
         for signal in self._signals:
-            self._shm.set_signal(f"inputs.{signal}", 0.0)
-        return 0
-
-    def terminate(self) -> None:
-        """Cleanup."""
-        self._shm.detach()
+            self._shm.set_signal(f"{self._name}.{signal}", 0.0)
 ```
 
 ### Acceptance Criteria
-- [ ] Implements module protocol
+- [ ] Implements module protocol (stage, step, reset)
 - [ ] Signals configurable via YAML
 - [ ] Values readable/writable through shared memory
 - [ ] Step is no-op (values persist)
@@ -142,94 +135,98 @@ class InjectionModule:
 
 ---
 
-## Task 3.2: Wire Configuration
+## Task 3.2: Mock Physics Module
 
-**Issue ID:** (create after Phase 2)
-**Priority:** Critical (P0)
+**Priority:** P0 (Critical)
 **Blocked By:** Task 3.1
 
 ### Objective
-Parse and validate wiring configuration from YAML.
+Create a simple physics module for testing wire routing without external dependencies.
 
 ### Deliverables
-- Enhanced `WireConfig` in `config.py`
-- Wire validation in ProcessManager
+- `src/hermes/modules/mock_physics.py`
+- Test fixtures
 
-### Wire Format
+### Features
+- Reads input signals (writable)
+- Computes simple dynamics: `output = input * 2 + state`
+- Writes output signals (read-only)
+- Maintains internal state across steps
+
+### Configuration
 ```yaml
-wiring:
-  - src: inputs.thrust_command
-    dst: icarus.Vehicle.thrust
-    gain: 1.0
-    offset: 0.0
-
-  - src: inputs.pitch_command
-    dst: icarus.Vehicle.control.pitch
-    gain: 0.0174533  # deg to rad
+modules:
+  physics:
+    type: script
+    script: hermes.modules.mock_physics
+    signals:
+      - name: input
+        type: f64
+        writable: true
+      - name: output
+        type: f64
+        writable: false
+      - name: state
+        type: f64
+        writable: false
 ```
-
-### Validation Rules
-- Source module must exist in config
-- Source signal must exist in shared memory registry
-- Destination module must exist in config
-- Destination signal must exist and be writable
-- No self-wiring (src == dst)
-- No circular dependencies (future enhancement)
 
 ### Implementation
 ```python
-from pydantic import BaseModel, model_validator
+"""Mock physics module for testing wire routing."""
+from hermes.backplane.shm import SharedMemoryManager
 
-class WireConfig(BaseModel):
-    src: str
-    dst: str
-    gain: float = 1.0
-    offset: float = 0.0
 
-    @model_validator(mode="after")
-    def validate_wire(self) -> "WireConfig":
-        if self.src == self.dst:
-            raise ValueError("Cannot wire signal to itself")
-        if "." not in self.src:
-            raise ValueError(f"Source must be qualified name: {self.src}")
-        if "." not in self.dst:
-            raise ValueError(f"Destination must be qualified name: {self.dst}")
-        return self
+class MockPhysicsModule:
+    """Simple physics module with basic dynamics.
 
-class WireValidator:
-    """Validates wires against shared memory registry."""
+    Computes: output = input * 2 + state
+    State accumulates: state += input * dt
+    """
 
-    def __init__(self, shm: SharedMemoryManager) -> None:
+    def __init__(self, module_name: str, shm: SharedMemoryManager) -> None:
+        self._name = module_name
         self._shm = shm
+        self._state = 0.0
 
-    def validate(self, wire: WireConfig) -> None:
-        # Check source exists
-        try:
-            self._shm.get_signal(wire.src)
-        except KeyError:
-            raise ValueError(f"Source signal not found: {wire.src}")
+    def stage(self) -> None:
+        """Initialize signals to zero."""
+        self._state = 0.0
+        self._shm.set_signal(f"{self._name}.input", 0.0)
+        self._shm.set_signal(f"{self._name}.output", 0.0)
+        self._shm.set_signal(f"{self._name}.state", 0.0)
 
-        # Check destination exists and is writable
-        try:
-            desc = self._shm.get_descriptor(wire.dst)
-            if not desc.flags & SignalFlags.WRITABLE:
-                raise ValueError(f"Destination not writable: {wire.dst}")
-        except KeyError:
-            raise ValueError(f"Destination signal not found: {wire.dst}")
+    def step(self, dt: float) -> None:
+        """Execute physics step."""
+        input_val = self._shm.get_signal(f"{self._name}.input")
+
+        # Simple dynamics
+        self._state += input_val * dt
+        output = input_val * 2.0 + self._state
+
+        self._shm.set_signal(f"{self._name}.output", output)
+        self._shm.set_signal(f"{self._name}.state", self._state)
+
+    def reset(self) -> None:
+        """Reset to initial state."""
+        self._state = 0.0
+        self._shm.set_signal(f"{self._name}.input", 0.0)
+        self._shm.set_signal(f"{self._name}.output", 0.0)
+        self._shm.set_signal(f"{self._name}.state", 0.0)
 ```
 
 ### Acceptance Criteria
-- [ ] Wire config parses from YAML
-- [ ] Validation errors are clear and actionable
-- [ ] Gain/offset have defaults (1.0, 0.0)
-- [ ] Invalid configs rejected with helpful messages
+- [ ] Implements module protocol
+- [ ] Reads input from shared memory
+- [ ] Computes deterministic output
+- [ ] Maintains state across steps
+- [ ] Reset restores initial state
 
 ---
 
 ## Task 3.3: Wire Router
 
-**Issue ID:** (create after Phase 2)
-**Priority:** Critical (P0)
+**Priority:** P0 (Critical)
 **Blocked By:** Task 3.2
 
 ### Objective
@@ -238,12 +235,21 @@ Implement signal transfer with gain and offset through shared memory.
 ### Deliverables
 - `src/hermes/core/router.py`
 - `WireRouter` class
+- Wire validation
+
+### Wire Transform
+```
+dst_value = src_value * gain + offset
+```
 
 ### Implementation
 ```python
+"""Wire router for inter-module signal routing."""
 from dataclasses import dataclass
+
 from hermes.backplane.shm import SharedMemoryManager
 from hermes.core.config import WireConfig
+
 
 @dataclass
 class CompiledWire:
@@ -253,21 +259,45 @@ class CompiledWire:
     gain: float
     offset: float
 
+
 class WireRouter:
-    """Routes signals between modules via shared memory."""
+    """Routes signals between modules via shared memory.
+
+    Wires are executed after all modules step, transferring
+    values from source signals to destination signals with
+    optional gain and offset transforms.
+    """
 
     def __init__(self, shm: SharedMemoryManager) -> None:
         self._shm = shm
         self._wires: list[CompiledWire] = []
 
     def add_wire(self, config: WireConfig) -> None:
-        """Add a wire (must be validated first)."""
+        """Add a wire from configuration.
+
+        Args:
+            config: Wire configuration with src, dst, gain, offset
+        """
         self._wires.append(CompiledWire(
             src=config.src,
             dst=config.dst,
             gain=config.gain,
             offset=config.offset,
         ))
+
+    def validate(self) -> None:
+        """Validate all wires against shared memory registry.
+
+        Raises:
+            ValueError: If source or destination signal not found
+        """
+        signal_names = set(self._shm.signal_names())
+
+        for wire in self._wires:
+            if wire.src not in signal_names:
+                raise ValueError(f"Wire source signal not found: {wire.src}")
+            if wire.dst not in signal_names:
+                raise ValueError(f"Wire destination signal not found: {wire.dst}")
 
     def route(self) -> None:
         """Execute all wire transfers."""
@@ -276,15 +306,15 @@ class WireRouter:
             transformed = value * wire.gain + wire.offset
             self._shm.set_signal(wire.dst, transformed)
 
+    @property
+    def wire_count(self) -> int:
+        """Number of configured wires."""
+        return len(self._wires)
+
     def clear(self) -> None:
         """Remove all wires."""
         self._wires.clear()
 ```
-
-### Routing Order
-1. All modules step (update their signals)
-2. Router executes all wires in definition order
-3. Telemetry is sampled (sees post-routing values)
 
 ### Scheduler Integration
 ```python
@@ -293,11 +323,11 @@ def step(self) -> None:
     # 1. Step all modules
     self._pm.step_all()
 
-    # 2. Route signals
+    # 2. Route signals (after all modules have updated)
     self._router.route()
 
     # 3. Update time
-    self._time += self.dt
+    self._time_ns += self._dt_ns
     self._frame += 1
 ```
 
@@ -308,195 +338,131 @@ def step(self) -> None:
 - [ ] Multiple wires work
 - [ ] Order matches config order
 - [ ] Routing happens after all modules step
+- [ ] Validation catches missing signals
 
 ---
 
-## Task 3.4: Multi-Module Schema
+## Task 3.4: Scheduler Wire Integration
 
-**Issue ID:** (create after Phase 2)
-**Priority:** High (P1)
+**Priority:** P0 (Critical)
 **Blocked By:** Task 3.3
 
 ### Objective
-Generate combined schema from all registered modules for WebSocket clients.
+Integrate wire routing into the scheduler execution loop.
 
-### Schema Format
-```json
-{
-  "version": "0.2",
-  "modules": {
-    "icarus": {
-      "type": "process",
-      "signals": {
-        "Vehicle.position.x": {"type": "f64", "unit": "m", "writable": false},
-        "Vehicle.position.y": {"type": "f64", "unit": "m", "writable": false},
-        "Vehicle.thrust": {"type": "f64", "unit": "N", "writable": true}
-      }
-    },
-    "inputs": {
-      "type": "script",
-      "signals": {
-        "thrust_command": {"type": "f64", "unit": "N", "writable": true}
-      }
-    }
-  },
-  "wiring": [
-    {
-      "src": "inputs.thrust_command",
-      "dst": "icarus.Vehicle.thrust",
-      "gain": 1.0,
-      "offset": 0.0
-    }
-  ]
-}
-```
+### Deliverables
+- Updated `Scheduler` class
+- Wire setup during `stage()`
 
 ### Implementation
 ```python
-def get_schema(self) -> dict:
-    """Generate schema from shared memory registry."""
-    schema = {
-        "version": "0.2",
-        "modules": {},
-        "wiring": [],
-    }
+class Scheduler:
+    def __init__(self, pm: ProcessManager, config: ExecutionConfig) -> None:
+        self._pm = pm
+        self._config = config
+        self._router = WireRouter(pm.shm)
+        # ... existing init
 
-    # Collect signals by module
-    for qualified_name, descriptor in self._registry.all_signals().items():
-        module, signal = qualified_name.split(".", 1)
-        if module not in schema["modules"]:
-            schema["modules"][module] = {"signals": {}}
-        schema["modules"][module]["signals"][signal] = {
-            "type": descriptor.type.name.lower(),
-            "unit": descriptor.unit,
-            "writable": bool(descriptor.flags & SignalFlags.WRITABLE),
-        }
+    def stage(self) -> None:
+        """Stage simulation with wire validation."""
+        # Stage all modules
+        self._pm.stage_all()
 
-    # Add wiring info
-    for wire in self._wires:
-        schema["wiring"].append({
-            "src": wire.src,
-            "dst": wire.dst,
-            "gain": wire.gain,
-            "offset": wire.offset,
-        })
+        # Configure wires from config
+        for wire_config in self._pm.config.wiring:
+            self._router.add_wire(wire_config)
 
-    return schema
+        # Validate wires against actual signals
+        self._router.validate()
+
+        # ... existing stage logic
+
+    def _execute_frame(self) -> None:
+        """Execute single simulation frame."""
+        # Step all modules
+        self._pm.step_all()
+
+        # Route signals
+        self._router.route()
+
+        # Update frame/time
+        # ...
 ```
 
 ### Acceptance Criteria
-- [ ] All modules included in schema
-- [ ] All signals listed with metadata
-- [ ] Wiring included in schema
-- [ ] JSON serializable
-- [ ] Sent to clients on connect
+- [ ] Wires configured from HermesConfig
+- [ ] Wire validation during stage
+- [ ] Routing executes after module steps
+- [ ] Clear errors for invalid wires
 
 ---
 
-## Task 3.5: Dynamic Signal Discovery
+## Task 3.5: Multi-Module Integration Test
 
-**Issue ID:** (create after Phase 2)
-**Priority:** High (P1)
+**Priority:** P1 (High)
 **Blocked By:** Task 3.4
-
-### Objective
-Allow modules to dynamically register their signals during initialization.
-
-### Signal Discovery Protocol
-```python
-# Module advertises signals during init
-def init(self, config_path: str, shm_name: str) -> int:
-    # Read config
-    config = load_config(config_path)
-
-    # Register signals with shared memory
-    for signal in self.discover_signals():
-        shm.register_signal(
-            name=f"{self.name}.{signal.name}",
-            type=signal.type,
-            flags=signal.flags,
-            unit=signal.unit,
-        )
-
-    return 0
-```
-
-### Signal Advertisement via YAML
-```yaml
-modules:
-  icarus:
-    type: process
-    executable: ./icarus_sim
-    config: ./icarus_config.yaml
-    # Signals discovered from icarus at runtime
-    # OR explicitly listed:
-    signals:
-      - name: Vehicle.position.x
-        type: f64
-        unit: m
-        writable: false
-```
-
-### Acceptance Criteria
-- [ ] Modules can register signals during init
-- [ ] Static signal lists from YAML work
-- [ ] Dynamic discovery from executables work
-- [ ] Signal metadata stored in registry
-
----
-
-## Task 3.6: Multi-Module Integration Test
-
-**Issue ID:** (create after Phase 2)
-**Priority:** High (P1)
-**Blocked By:** Task 3.5
 
 ### Objective
 Integration test with multiple modules and wiring.
 
-### Test Scenario
-1. Configure mock "physics" module with input/output signals
-2. Configure injection module with command signals
-3. Wire `inputs.command` → `physics.input`
-4. Set injection value via scripting API
-5. Step simulation
-6. Verify physics module received wired value
-7. Verify telemetry shows both modules
-
 ### Deliverables
-- `tests/integration/test_multimodule.py`
+- `tests/test_integration/test_multimodule.py`
 - Multi-module example config
-- Mock physics module for testing
+
+### Test Scenarios
+
+1. **Basic Wiring**
+   - Injection module → Physics module
+   - Verify value transfer with gain/offset
+
+2. **Multiple Wires**
+   - Multiple injection signals routed to physics
+   - Verify all transfers work
+
+3. **Wire Validation**
+   - Missing source signal → clear error
+   - Missing destination signal → clear error
+
+4. **Reset Behavior**
+   - Reset should re-initialize all modules
+   - Wire state preserved (wires are config, not state)
 
 ### Test Implementation
 ```python
-@pytest.fixture
-def multi_module_config(tmp_path):
-    config = tmp_path / "config.yaml"
-    config.write_text("""
+import pytest
+from hermes.core.config import HermesConfig
+from hermes.core.process import ProcessManager
+from hermes.core.scheduler import Scheduler
+
+
+class TestMultiModuleWiring:
+    """Tests for multi-module wire routing."""
+
+    def test_basic_wire_routing(self, tmp_path):
+        """Wire should transfer value with gain/offset."""
+        config_yaml = tmp_path / "config.yaml"
+        config_yaml.write_text("""
 version: "0.2"
 modules:
+  inputs:
+    type: script
+    script: hermes.modules.injection
+    signals:
+      - name: cmd
+        type: f64
+        writable: true
   physics:
     type: script
-    script: tests.fixtures.mock_physics
+    script: hermes.modules.mock_physics
     signals:
       - name: input
         type: f64
         writable: true
       - name: output
         type: f64
-        writable: false
-
-  inputs:
-    type: script
-    script: hermes.modules.injection
-    signals:
-      - name: command
-        type: f64
-        writable: true
 
 wiring:
-  - src: inputs.command
+  - src: inputs.cmd
     dst: physics.input
     gain: 2.0
     offset: 10.0
@@ -505,72 +471,165 @@ execution:
   mode: single_frame
   rate_hz: 100.0
 """)
-    return config
 
-def test_wiring(multi_module_config):
-    with ProcessManager.from_yaml(multi_module_config) as pm:
-        scheduler = Scheduler(pm, pm.config.execution)
-        scheduler.stage()
+        with ProcessManager.from_yaml(config_yaml) as pm:
+            sched = Scheduler(pm, pm.config.execution)
+            sched.stage()
 
-        # Set injection value
-        pm.shm.set_signal("inputs.command", 5.0)
+            # Set injection value
+            pm.shm.set_signal("inputs.cmd", 5.0)
 
-        # Step simulation
-        scheduler.step()
+            # Step simulation (routes wires)
+            sched.step()
 
-        # Wire should transform: 5.0 * 2.0 + 10.0 = 20.0
-        assert pm.shm.get_signal("physics.input") == 20.0
+            # Wire transform: 5.0 * 2.0 + 10.0 = 20.0
+            assert pm.shm.get_signal("physics.input") == pytest.approx(20.0)
+
+    def test_invalid_wire_source_raises(self, tmp_path):
+        """Invalid wire source should raise during stage."""
+        config_yaml = tmp_path / "config.yaml"
+        config_yaml.write_text("""
+version: "0.2"
+modules:
+  physics:
+    type: script
+    script: hermes.modules.mock_physics
+    signals:
+      - name: input
+        type: f64
+        writable: true
+
+wiring:
+  - src: nonexistent.signal
+    dst: physics.input
+
+execution:
+  mode: single_frame
+  rate_hz: 100.0
+""")
+
+        with ProcessManager.from_yaml(config_yaml) as pm:
+            sched = Scheduler(pm, pm.config.execution)
+
+            with pytest.raises(ValueError, match="source signal not found"):
+                sched.stage()
 ```
 
 ### Acceptance Criteria
-- [ ] Both modules register successfully
-- [ ] Wire validation passes
-- [ ] Signal routing works with gain/offset
-- [ ] Combined schema correct
-- [ ] End-to-end test passes
+- [ ] Basic wire routing works
+- [ ] Gain/offset transforms correct
+- [ ] Multiple wires work
+- [ ] Wire validation catches errors
+- [ ] Reset preserves wire config
+- [ ] All tests pass
 
 ---
 
-## Example Multi-Module Configuration
+## Task 3.6: Multi-Module Schema for WebSocket
+
+**Priority:** P1 (High)
+**Blocked By:** Task 3.5
+
+### Objective
+Include wiring information in schema sent to WebSocket clients.
+
+### Schema Format
+```json
+{
+  "type": "schema",
+  "payload": {
+    "version": "0.2",
+    "modules": {
+      "inputs": {
+        "signals": [
+          {"name": "cmd", "type": "f64", "writable": true}
+        ]
+      },
+      "physics": {
+        "signals": [
+          {"name": "input", "type": "f64", "writable": true},
+          {"name": "output", "type": "f64", "writable": false}
+        ]
+      }
+    },
+    "wiring": [
+      {"src": "inputs.cmd", "dst": "physics.input", "gain": 2.0, "offset": 10.0}
+    ]
+  }
+}
+```
+
+### Acceptance Criteria
+- [ ] Schema includes all modules
+- [ ] Schema includes all signals with metadata
+- [ ] Schema includes wiring configuration
+- [ ] JSON serializable
+- [ ] Sent to clients on connect
+
+---
+
+## Phase 3 Completion Checklist
+
+- [ ] All Phase 3 tasks complete
+- [ ] `./scripts/ci.sh` passes
+- [ ] Injection module works
+- [ ] Mock physics module works
+- [ ] Wire routing works with gain/offset
+- [ ] Multi-module schema served to WebSocket clients
+- [ ] Integration tests pass
+- [ ] Example configuration works
+
+---
+
+## Example Configuration
 
 ```yaml
 # examples/multi_module.yaml
 version: "0.2"
 
 modules:
-  icarus:
-    type: process
-    executable: ./icarus_sim
-    config: ./icarus_config.yaml
-
+  # Injection module for test inputs
   inputs:
     type: script
     script: hermes.modules.injection
     signals:
-      - name: thrust_command
+      - name: thrust_cmd
         type: f64
         unit: N
         writable: true
-      - name: pitch_command
+      - name: pitch_cmd
         type: f64
         unit: deg
         writable: true
-      - name: yaw_command
+
+  # Mock physics for testing
+  physics:
+    type: script
+    script: hermes.modules.mock_physics
+    signals:
+      - name: thrust_input
         type: f64
-        unit: deg
+        unit: N
         writable: true
+      - name: pitch_input
+        type: f64
+        unit: rad
+        writable: true
+      - name: altitude
+        type: f64
+        unit: m
+      - name: velocity
+        type: f64
+        unit: m/s
 
 wiring:
-  - src: inputs.thrust_command
-    dst: icarus.Vehicle.thrust
+  # Route injection to physics inputs
+  - src: inputs.thrust_cmd
+    dst: physics.thrust_input
 
-  - src: inputs.pitch_command
-    dst: icarus.Vehicle.control.pitch
+  - src: inputs.pitch_cmd
+    dst: physics.pitch_input
     gain: 0.0174533  # deg to rad
-
-  - src: inputs.yaw_command
-    dst: icarus.Vehicle.control.yaw
-    gain: 0.0174533
 
 execution:
   mode: afap
@@ -578,46 +637,13 @@ execution:
   end_time: 10.0
   schedule:
     - inputs    # Injection first
-    - icarus    # Physics second
+    - physics   # Physics second
 
 server:
   enabled: true
-  host: "0.0.0.0"
   port: 8765
   telemetry_hz: 60.0
 ```
-
----
-
-## Beads Integration
-
-Issues will be created after Phase 2 is complete:
-
-```bash
-# Create Phase 3 issues
-bd create --title "Injection Module" -d "Python script module for test signal input" -p 0 -l phase3,module
-bd create --title "Wire Configuration" -d "YAML parsing and validation for wiring" -p 0 -l phase3,config
-bd create --title "Wire Router" -d "Signal routing with gain/offset via shared memory" -p 0 -l phase3,core
-bd create --title "Multi-Module Schema" -d "Combined schema generation for WebSocket" -p 1 -l phase3,server
-bd create --title "Dynamic Signal Discovery" -d "Runtime signal registration by modules" -p 1 -l phase3,core
-bd create --title "Multi-Module Integration Test" -d "End-to-end test with wiring" -p 1 -l phase3,tests
-
-# View phase 3 work
-bd list --label phase3
-```
-
----
-
-## Phase 3 Completion Checklist
-
-- [ ] All Phase 3 issues closed
-- [ ] `./scripts/ci.sh` passes
-- [ ] Injection module works standalone
-- [ ] Multi-module config loads successfully
-- [ ] Wiring routes signals correctly with transforms
-- [ ] Combined schema served to WebSocket clients
-- [ ] Integration test passes
-- [ ] `bd sync && git push` completed
 
 ---
 
@@ -625,14 +651,14 @@ bd list --label phase3
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                            HERMES v0.2                                   │
+│                            HERMES v0.3                                   │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │  Configuration                                                          │
 │  ┌──────────┐                                                           │
 │  │  YAML    │──▶ Pydantic Validation ──▶ HermesConfig                  │
-│  └──────────┘                                                           │
-│                                                                          │
+│  └──────────┘         │                                                 │
+│                       ▼                                                 │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
 │  │                   Shared Memory Backplane                          │ │
 │  │  ┌─────────┐ ┌─────────────────┐ ┌─────────────────┐              │ │
@@ -641,54 +667,35 @@ bd list --label phase3
 │  └─────────────────────────┬──────────────────────────────────────────┘ │
 │                            │                                             │
 │  Module Layer              │                                             │
-│  ┌──────────┐  ┌──────────┴─┐  ┌──────────┐                           │
-│  │  Icarus  │  │ Injection  │  │  Script  │  (future)                 │
-│  │  Process │  │  Module    │  │  Module  │                           │
-│  └────┬─────┘  └─────┬──────┘  └────┬─────┘                           │
-│       │              │              │                                   │
-│       └──────────────┼──────────────┘                                   │
+│  ┌──────────┐  ┌──────────┴─┐                                          │
+│  │ Injection│  │   Mock     │   ◄── Python script modules              │
+│  │  Module  │  │  Physics   │                                          │
+│  └────┬─────┘  └─────┬──────┘                                          │
+│       │              │                                                   │
+│       └──────────────┤                                                   │
 │                      │                                                   │
 │  Core Layer          ▼                                                   │
 │  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │                      Process Manager                              │  │
-│  │  • Module lifecycle                                               │  │
-│  │  • Barrier synchronization                                        │  │
-│  │  • Wire routing                                                   │  │
+│  │                      Wire Router                                  │  │
+│  │  • Executes wires after module steps                             │  │
+│  │  • Applies gain/offset transforms                                │  │
 │  └──────────────────────────┬───────────────────────────────────────┘  │
 │                             │                                            │
 │  ┌──────────────────────────▼───────────────────────────────────────┐  │
 │  │                        Scheduler                                  │  │
-│  │  • Frame loop                                                     │  │
+│  │  • Frame loop with wire routing                                  │  │
 │  │  • Time tracking                                                  │  │
 │  │  • Mode control                                                   │  │
-│  └──────────────────────────┬───────────────────────────────────────┘  │
-│                             │                                            │
-│  Server Layer              ▼                                            │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │                     WebSocket Server                              │  │
-│  │  • Protocol handling                                              │  │
-│  │  • Telemetry streaming (reads shared memory)                     │  │
-│  │  • Client management                                              │  │
-│  └──────────────────────────┬───────────────────────────────────────┘  │
-│                             │                                            │
-└─────────────────────────────┼────────────────────────────────────────────┘
-                              │
-                              ▼
-                      ┌───────────────┐
-                      │   Daedalus    │
-                      │ Visualization │
-                      └───────────────┘
+│  └──────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Next Phase Preview
+## Next Phase: Phase 3.5 (Icarus Integration)
 
-Phase 4 (Polish & Documentation) will:
-- Add comprehensive error handling for IPC failures
-- Enhance configuration validation
-- Complete protocol documentation
-- Create example configurations
-- Set up CI/CD pipeline
+Phase 3.5 integrates the Icarus 6DOF physics simulator as a module type,
+enabling real aerospace simulation scenarios.
 
-See `phase4_polish.md` for details.
+See `phase3.5_icarus.md` for details.
