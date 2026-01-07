@@ -109,7 +109,13 @@ class FrameBarrier:
             raise RuntimeError("Already attached to barrier")
 
         self._step_sem = posix_ipc.Semaphore(f"{self._name}_step")
-        self._done_sem = posix_ipc.Semaphore(f"{self._name}_done")
+        try:
+            self._done_sem = posix_ipc.Semaphore(f"{self._name}_done")
+        except Exception:
+            # Clean up _step_sem if _done_sem attachment fails
+            self._step_sem.close()
+            self._step_sem = None
+            raise
 
     def signal_step(self) -> None:
         """Scheduler: signal all modules to execute a step.

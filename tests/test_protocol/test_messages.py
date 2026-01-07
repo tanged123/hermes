@@ -111,7 +111,7 @@ class TestControlMessage:
     def test_from_bytes_invalid_json_raises(self) -> None:
         """Should raise ValueError for invalid JSON."""
         data = b"not valid json"
-        with pytest.raises(json.JSONDecodeError):
+        with pytest.raises(ValueError, match="Invalid message format"):
             ControlMessage.from_bytes(data)
 
     def test_from_bytes_invalid_type_raises(self) -> None:

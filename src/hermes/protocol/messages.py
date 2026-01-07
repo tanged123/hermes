@@ -65,13 +65,14 @@ class ControlMessage:
         Raises:
             ValueError: If message format invalid
         """
-        text = data.decode("utf-8").strip()
-        parsed = json.loads(text)
-
-        msg_type = MessageType(parsed["type"])
-        payload = parsed.get("payload")
-
-        return cls(type=msg_type, payload=payload)
+        try:
+            text = data.decode("utf-8").strip()
+            parsed = json.loads(text)
+            msg_type = MessageType(parsed["type"])
+            payload = parsed.get("payload")
+            return cls(type=msg_type, payload=payload)
+        except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            raise ValueError(f"Invalid message format: {e}") from e
 
 
 @dataclass
