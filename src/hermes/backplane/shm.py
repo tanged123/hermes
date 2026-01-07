@@ -192,33 +192,8 @@ class SharedMemoryManager:
 
         self._signal_count = signal_count
 
-        # Read signal directory and build offset lookup
-        self._mmap.seek(self.HEADER_SIZE)
+        # Calculate _data_offset by finding end of string table
         string_table_start = self.HEADER_SIZE + signal_count * 16
-
-        for _ in range(signal_count):
-            entry_data = self._mmap.read(16)
-            name_off, data_off = struct.unpack("<I I", entry_data[:8])
-
-            # Read signal name from string table
-            pos = self._mmap.tell()
-            self._mmap.seek(string_table_start + name_off)
-            name_bytes = b""
-            while True:
-                c = self._mmap.read(1)
-                if c == b"\x00" or c == b"":
-                    break
-                name_bytes += c
-            self._mmap.seek(pos)
-
-            signal_name = name_bytes.decode("utf-8")
-
-            # Calculate data offset (need to find _data_offset first)
-            header_and_meta = self.HEADER_SIZE + signal_count * 16
-            # Estimate string table size by reading until we find alignment padding
-            self._data_offset = (header_and_meta + 1024 + 63) & ~63  # Rough estimate
-
-        # Re-read to properly calculate _data_offset
         self._mmap.seek(self.HEADER_SIZE)
         max_string_end = 0
         for i in range(signal_count):

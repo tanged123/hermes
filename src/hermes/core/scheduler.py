@@ -189,6 +189,7 @@ class Scheduler:
 
         self._running = True
         wall_start = time.perf_counter()
+        pause_start: float | None = None  # Track when pause began
 
         # Get end time in nanoseconds for deterministic comparison
         end_time_ns = self._config.get_end_time_ns()
@@ -207,10 +208,17 @@ class Scheduler:
                     log.info("End time reached", time_ns=self._time_ns)
                     break
 
-                # Pause handling
+                # Pause handling with wall_start adjustment for realtime mode
                 if self._paused:
+                    if pause_start is None:
+                        pause_start = time.perf_counter()
                     await asyncio.sleep(0.01)
                     continue
+                elif pause_start is not None:
+                    # Resuming from pause: adjust wall_start to account for pause duration
+                    pause_duration = time.perf_counter() - pause_start
+                    wall_start += pause_duration
+                    pause_start = None
 
                 # Single frame mode waits for explicit step()
                 if self._config.mode == ExecutionMode.SINGLE_FRAME:

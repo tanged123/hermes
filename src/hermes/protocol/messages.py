@@ -85,14 +85,14 @@ class Command:
     params: dict[str, object] | None = None
 
     def to_message(self) -> ControlMessage:
-        """Convert to ControlMessage for transmission."""
+        """Convert to ControlMessage for transmission.
+
+        Raises:
+            ValueError: If action is not a valid MessageType
+        """
         try:
             msg_type = MessageType(self.action)
         except ValueError:
-            msg_type = MessageType.STEP  # Default
-            params: dict[str, object] = {"action": self.action}
-            if self.params:
-                params.update(self.params)
-            return ControlMessage(type=msg_type, payload=params)
+            raise ValueError(f"Unknown action: {self.action}") from None
 
         return ControlMessage(type=msg_type, payload=self.params)

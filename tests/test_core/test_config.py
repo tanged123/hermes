@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -95,7 +94,7 @@ class TestWireConfig:
 
     def test_wire_config_requires_qualified_names(self) -> None:
         """Wire src/dst must be qualified (module.signal)."""
-        with pytest.raises(ValueError, match="module.signal"):
+        with pytest.raises(ValueError, match=r"module\.signal"):
             WireConfig(src="nope", dst="also_nope")
 
     def test_wire_config_valid(self) -> None:
@@ -199,9 +198,9 @@ class TestHermesConfig:
                 execution=ExecutionConfig(schedule=["nonexistent"]),
             )
 
-    def test_from_yaml(self) -> None:
+    def test_from_yaml(self, tmp_path: Path) -> None:
         """Should load configuration from YAML file."""
-        yaml_content = """
+        yaml_content = """\
 version: "0.2"
 modules:
   vehicle:
@@ -216,17 +215,16 @@ execution:
   rate_hz: 50.0
   end_time: 10.0
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write(yaml_content)
-            f.flush()
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml_content)
 
-            cfg = HermesConfig.from_yaml(Path(f.name))
+        cfg = HermesConfig.from_yaml(config_file)
 
-            assert "vehicle" in cfg.modules
-            assert cfg.modules["vehicle"].type == ModuleType.SCRIPT
-            assert cfg.execution.mode == ExecutionMode.AFAP
-            assert cfg.execution.rate_hz == 50.0
-            assert cfg.execution.end_time == 10.0
+        assert "vehicle" in cfg.modules
+        assert cfg.modules["vehicle"].type == ModuleType.SCRIPT
+        assert cfg.execution.mode == ExecutionMode.AFAP
+        assert cfg.execution.rate_hz == 50.0
+        assert cfg.execution.end_time == 10.0
 
     def test_get_dt(self) -> None:
         """Should calculate timestep correctly."""

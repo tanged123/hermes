@@ -164,24 +164,19 @@ class TestCommand:
         assert msg.type == MessageType.PAUSE
         assert msg.payload is None
 
-    def test_to_message_unknown_action_defaults_to_step(self) -> None:
-        """Should default to STEP for unknown action and include action in payload."""
+    def test_to_message_unknown_action_raises(self) -> None:
+        """Should raise ValueError for unknown action."""
         cmd = Command(action="custom_action", params={"key": "value"})
-        msg = cmd.to_message()
 
-        assert msg.type == MessageType.STEP
-        assert msg.payload is not None
-        assert msg.payload["action"] == "custom_action"
-        assert msg.payload["key"] == "value"
+        with pytest.raises(ValueError, match="Unknown action: custom_action"):
+            cmd.to_message()
 
-    def test_to_message_unknown_action_no_params(self) -> None:
-        """Should handle unknown action without original params."""
+    def test_to_message_unknown_action_no_params_raises(self) -> None:
+        """Should raise ValueError for unknown action without params."""
         cmd = Command(action="unknown")
-        msg = cmd.to_message()
 
-        assert msg.type == MessageType.STEP
-        assert msg.payload is not None
-        assert msg.payload["action"] == "unknown"
+        with pytest.raises(ValueError, match="Unknown action: unknown"):
+            cmd.to_message()
 
     def test_all_message_types_convertible(self) -> None:
         """Should convert all standard message types."""

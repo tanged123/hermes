@@ -47,7 +47,12 @@ class FrameBarrier:
         Args:
             name: Base name for semaphores (e.g., "/hermes_barrier")
             count: Number of module processes to synchronize
+
+        Raises:
+            ValueError: If count is less than 1
         """
+        if count < 1:
+            raise ValueError(f"FrameBarrier count must be at least 1, got {count}")
         self._name = name
         self._count = count
         self._step_sem: posix_ipc.Semaphore | None = None
@@ -79,11 +84,19 @@ class FrameBarrier:
             posix_ipc.O_CREX,
             initial_value=0,
         )
-        self._done_sem = posix_ipc.Semaphore(
-            f"{self._name}_done",
-            posix_ipc.O_CREX,
-            initial_value=0,
-        )
+        try:
+            self._done_sem = posix_ipc.Semaphore(
+                f"{self._name}_done",
+                posix_ipc.O_CREX,
+                initial_value=0,
+            )
+        except Exception:
+            # Clean up _step_sem if _done_sem creation fails
+            self._step_sem.close()
+            with contextlib.suppress(posix_ipc.ExistentialError):
+                posix_ipc.unlink_semaphore(f"{self._name}_step")
+            self._step_sem = None
+            raise
 
     def attach(self) -> None:
         """Attach to existing barrier semaphores.

@@ -149,9 +149,9 @@ class ModuleProcess:
         self._process = subprocess.Popen(
             args,
             env=env,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
     def _start_script(self) -> None:
@@ -175,9 +175,9 @@ class ModuleProcess:
         self._process = subprocess.Popen(
             args,
             env=env,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
     def stage(self) -> None:
@@ -193,6 +193,12 @@ class ModuleProcess:
         # Future: send STAGE command via named pipe
         self._state = ModuleState.STAGED
         log.debug("Module staged", module=self._name)
+
+    def mark_running(self) -> None:
+        """Transition module to RUNNING state when execution begins."""
+        if self._state == ModuleState.STAGED:
+            self._state = ModuleState.RUNNING
+            log.debug("Module running", module=self._name)
 
     def terminate(self, timeout: float = 5.0) -> None:
         """Gracefully terminate the module.
@@ -275,6 +281,8 @@ class ProcessManager:
         1. Shared memory segment with all signals
         2. Synchronization barrier
         3. Module processes
+
+        If any step fails, previously created resources are cleaned up.
         """
         from hermes.backplane.shm import SharedMemoryManager
         from hermes.backplane.signals import SignalDescriptor, SignalFlags, SignalType
@@ -314,24 +322,50 @@ class ProcessManager:
 
         # Create shared memory
         self._shm = SharedMemoryManager(self._shm_name)
-        self._shm.create(signals)
-        log.info("Shared memory created", name=self._shm_name, signals=len(signals))
+        try:
+            self._shm.create(signals)
+            log.info("Shared memory created", name=self._shm_name, signals=len(signals))
+        except Exception:
+            self._shm = None
+            raise
 
         # Create synchronization barrier
         module_count = len(self._config.modules)
+        if module_count < 1:
+            # Clean up shared memory before raising
+            self._shm.destroy()
+            self._shm = None
+            raise ValueError("Cannot initialize ProcessManager with zero modules")
+
         self._barrier = FrameBarrier(self._barrier_name, module_count)
-        self._barrier.create()
-        log.info("Barrier created", name=self._barrier_name, count=module_count)
+        try:
+            self._barrier.create()
+            log.info("Barrier created", name=self._barrier_name, count=module_count)
+        except Exception:
+            # Clean up shared memory on barrier creation failure
+            self._shm.destroy()
+            self._shm = None
+            self._barrier = None
+            raise
 
         # Load each module process
-        for name, module_config in self._config.modules.items():
-            module = ModuleProcess(
-                name=name,
-                config=module_config,
-                shm_name=self._shm_name,
-                barrier_name=self._barrier_name,
-            )
-            self._modules[name] = module
+        try:
+            for name, module_config in self._config.modules.items():
+                module = ModuleProcess(
+                    name=name,
+                    config=module_config,
+                    shm_name=self._shm_name,
+                    barrier_name=self._barrier_name,
+                )
+                self._modules[name] = module
+        except Exception:
+            # Clean up all resources on module creation failure
+            self._barrier.destroy()
+            self._barrier = None
+            self._shm.destroy()
+            self._shm = None
+            self._modules.clear()
+            raise
 
     def load_all(self) -> None:
         """Start all module processes."""
@@ -345,21 +379,34 @@ class ProcessManager:
             if name in self._modules:
                 self._modules[name].stage()
 
-    def step_all(self) -> None:
+    def step_all(self, timeout: float = 30.0) -> None:
         """Execute one simulation frame across all modules.
 
         Uses barrier synchronization:
         1. Signal all modules to execute their step
         2. Wait for all modules to complete
+
+        Args:
+            timeout: Maximum seconds to wait for all modules to complete
+
+        Raises:
+            RuntimeError: If not initialized
+            TimeoutError: If modules don't complete within timeout
         """
         if self._barrier is None:
             raise RuntimeError("ProcessManager not initialized")
+
+        # Mark modules as running (idempotent after first call)
+        for module in self._modules.values():
+            module.mark_running()
 
         # Signal all modules to step
         self._barrier.signal_step()
 
         # Wait for all modules to complete
-        self._barrier.wait_all_done()
+        if not self._barrier.wait_all_done(timeout=timeout):
+            log.error("Timeout waiting for modules to complete step", timeout=timeout)
+            raise TimeoutError(f"Modules did not complete within {timeout}s")
 
     def update_time(self, frame: int, time_ns: int) -> None:
         """Update frame number and simulation time in shared memory.
