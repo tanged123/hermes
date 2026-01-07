@@ -25,7 +25,8 @@
       "Bash(timeout 30 nix develop:*)",
       "Bash(./scripts/ci.sh:*)",
       "Bash(timeout 60 nix develop --command python -m pytest:*)",
-      "Bash(timeout 120 nix develop --command python -m pytest:*)"
+      "Bash(timeout 120 nix develop --command python -m pytest:*)",
+      "Bash(timeout 180 nix develop --command python -m pytest:*)"
     ]
   }
 }
