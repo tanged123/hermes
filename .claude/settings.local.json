@@ -27,7 +27,9 @@
       "Bash(timeout 60 nix develop --command python -m pytest:*)",
       "Bash(timeout 120 nix develop --command python -m pytest:*)",
       "Bash(timeout 180 nix develop --command python -m pytest:*)",
-      "Bash(bd stats:*)"
+      "Bash(bd stats:*)",
+      "Bash(./scripts/test.sh:*)",
+      "Bash(git -C /home/tanged/sources/hermes status)"
     ]
   }
 }

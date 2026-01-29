@@ -60,6 +60,9 @@ class ModuleConfig(BaseModel):
     script: Path | None = None
     """For script type: path to Python script."""
 
+    inproc_module: str | None = None
+    """For inproc type: dotted Python import path (e.g., 'hermes.modules.injection')."""
+
     config: Path | None = None
     """Path to module-specific configuration file."""
 
@@ -83,6 +86,8 @@ class ModuleConfig(BaseModel):
             raise ValueError("'executable' required for process modules")
         if self.type == ModuleType.SCRIPT and self.script is None:
             raise ValueError("'script' required for script modules")
+        if self.type == ModuleType.INPROC and self.inproc_module is None:
+            raise ValueError("'inproc_module' required for inproc modules (dotted import path)")
         return self
 
 

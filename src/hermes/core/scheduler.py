@@ -30,6 +30,7 @@ import structlog
 if TYPE_CHECKING:
     from hermes.core.config import ExecutionConfig, ExecutionMode
     from hermes.core.process import ProcessManager
+    from hermes.core.router import WireRouter
 
 log = structlog.get_logger()
 
@@ -68,6 +69,7 @@ class Scheduler:
         self._dt_ns: int = config.get_dt_ns()  # Precomputed timestep in ns
         self._running: bool = False
         self._paused: bool = False
+        self._router: WireRouter | None = None
 
     @property
     def frame(self) -> int:
@@ -126,11 +128,23 @@ class Scheduler:
     def stage(self) -> None:
         """Stage simulation for execution.
 
-        Calls stage() on all modules via ProcessManager and resets
-        frame/time counters to zero.
+        Calls stage() on all modules via ProcessManager, configures
+        wire routing, and resets frame/time counters to zero.
         """
+        from hermes.core.router import WireRouter
+
         log.info("Staging simulation")
         self._pm.stage_all()
+
+        # Configure wire routing
+        shm = self._pm.shm
+        if shm is not None and self._pm.config.wiring:
+            self._router = WireRouter(shm)
+            for wire_config in self._pm.config.wiring:
+                self._router.add_wire(wire_config)
+            self._router.validate()
+            log.info("Wire routing configured", wires=self._router.wire_count)
+
         self._frame = 0
         self._time_ns = 0
         self._pm.update_time(self._frame, self._time_ns)
@@ -151,6 +165,10 @@ class Scheduler:
         for _ in range(count):
             # Update time before step so modules see current time
             self._pm.update_time(self._frame, self._time_ns)
+
+            # Route signals before stepping so modules see current wired values
+            if self._router is not None:
+                self._router.route()
 
             # Execute all modules for this frame
             self._pm.step_all()

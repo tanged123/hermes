@@ -296,8 +296,11 @@ class TestModuleProcess:
             Path(script_path).unlink()
 
     def test_load_unsupported_module_type(self) -> None:
-        """Should raise ValueError for unsupported module type."""
-        config = ModuleConfig(type=ModuleType.INPROC)
+        """Should raise ValueError for unsupported module type as subprocess."""
+        config = ModuleConfig(
+            type=ModuleType.INPROC,
+            inproc_module="hermes.modules.injection",
+        )
         module = ModuleProcess(
             name="test",
             config=config,
