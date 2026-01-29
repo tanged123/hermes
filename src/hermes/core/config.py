@@ -146,7 +146,7 @@ class ScheduleEntry(BaseModel):
         """Allow bare string format for backwards compatibility."""
         if isinstance(value, str):
             return {"name": value}
-        return value
+        return value  # type: ignore[no-any-return]
 
 
 class ExecutionConfig(BaseModel):
