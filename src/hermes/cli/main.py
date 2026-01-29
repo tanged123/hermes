@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import signal
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any
 
@@ -21,14 +22,34 @@ from hermes.core.scheduler import Scheduler
 from hermes.server import HermesServer
 from hermes.server import ServerConfig as WsServerConfig
 
-# Configure structlog for console output
-structlog.configure(
-    processors=[
-        structlog.stdlib.add_log_level,
-        structlog.dev.ConsoleRenderer(colors=True),
-    ],
-)
 log = structlog.get_logger()
+
+
+def _configure_logging(*, verbose: bool = False, quiet: bool = False) -> None:
+    """Configure structlog with appropriate log level filtering."""
+    import logging
+
+    if quiet:
+        min_level = logging.WARNING
+    elif verbose:
+        min_level = logging.DEBUG
+    else:
+        min_level = logging.INFO
+
+    def _filter_by_level(
+        _logger: Any, method_name: str, event_dict: MutableMapping[str, Any]
+    ) -> MutableMapping[str, Any]:
+        if getattr(logging, method_name.upper(), 0) < min_level:
+            raise structlog.DropEvent
+        return event_dict
+
+    structlog.configure(
+        processors=[
+            _filter_by_level,
+            structlog.stdlib.add_log_level,
+            structlog.dev.ConsoleRenderer(colors=True),
+        ],
+    )
 
 
 @click.group()
@@ -71,6 +92,8 @@ def run(config_path: Path, verbose: bool, quiet: bool, no_server: bool, port: in
 
     CONFIG_PATH: Path to YAML configuration file
     """
+    _configure_logging(verbose=verbose, quiet=quiet)
+
     # Load configuration
     log.info("Loading configuration", path=str(config_path))
     try:
