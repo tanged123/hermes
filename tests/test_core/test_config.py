@@ -12,6 +12,7 @@ from hermes.core.config import (
     HermesConfig,
     ModuleConfig,
     ModuleType,
+    ScheduleEntry,
     SignalConfig,
     WireConfig,
 )
@@ -256,3 +257,100 @@ execution:
         )
         names = cfg.get_module_names()
         assert names == ["b", "a"]
+
+
+class TestScheduleEntry:
+    """Tests for ScheduleEntry model."""
+
+    def test_from_string(self) -> None:
+        """Should parse from bare string."""
+        entry = ScheduleEntry.model_validate("physics")
+        assert entry.name == "physics"
+        assert entry.rate_hz is None
+
+    def test_from_dict(self) -> None:
+        """Should parse from dict with rate."""
+        entry = ScheduleEntry.model_validate({"name": "physics", "rate_hz": 1000.0})
+        assert entry.name == "physics"
+        assert entry.rate_hz == 1000.0
+
+    def test_from_dict_no_rate(self) -> None:
+        """Should parse from dict without rate."""
+        entry = ScheduleEntry.model_validate({"name": "inputs"})
+        assert entry.name == "inputs"
+        assert entry.rate_hz is None
+
+
+class TestMultiRateSchedule:
+    """Tests for multi-rate scheduling configuration."""
+
+    def test_backwards_compat_string_list(self) -> None:
+        """Old string schedule format should still work."""
+        cfg = ExecutionConfig(rate_hz=100.0, schedule=["inputs", "physics"])
+        assert len(cfg.schedule) == 2
+        assert cfg.schedule[0].name == "inputs"
+        assert cfg.schedule[0].rate_hz is None
+        assert cfg.schedule[1].name == "physics"
+
+    def test_multi_rate_valid(self) -> None:
+        """Valid multi-rate schedule should pass validation."""
+        cfg = ExecutionConfig(
+            rate_hz=200.0,
+            schedule=[
+                {"name": "inputs", "rate_hz": 200.0},
+                {"name": "physics", "rate_hz": 1000.0},
+            ],
+        )
+        assert cfg.get_major_frame_rate_hz() == 200.0
+
+    def test_multi_rate_non_integer_multiple_rejected(self) -> None:
+        """Non-integer rate multiples should fail."""
+        with pytest.raises(ValueError, match="integer multiple"):
+            ExecutionConfig(
+                rate_hz=200.0,
+                schedule=[
+                    {"name": "inputs", "rate_hz": 200.0},
+                    {"name": "physics", "rate_hz": 333.0},
+                ],
+            )
+
+    def test_major_frame_rate_no_schedule(self) -> None:
+        """Should return rate_hz when no schedule."""
+        cfg = ExecutionConfig(rate_hz=100.0)
+        assert cfg.get_major_frame_rate_hz() == 100.0
+
+    def test_major_frame_rate_inherited(self) -> None:
+        """Entries without rate_hz inherit execution rate."""
+        cfg = ExecutionConfig(
+            rate_hz=100.0,
+            schedule=["inputs", "physics"],
+        )
+        assert cfg.get_major_frame_rate_hz() == 100.0
+
+    def test_dt_ns_uses_major_frame_rate(self) -> None:
+        """get_dt_ns should use major frame rate, not rate_hz."""
+        cfg = ExecutionConfig(
+            rate_hz=1000.0,
+            schedule=[
+                {"name": "slow", "rate_hz": 200.0},
+                {"name": "fast", "rate_hz": 1000.0},
+            ],
+        )
+        # Major frame at 200 Hz = 5ms = 5_000_000 ns
+        assert cfg.get_dt_ns() == 5_000_000
+
+    def test_get_module_names_with_schedule_entries(self) -> None:
+        """get_module_names should extract names from ScheduleEntry."""
+        cfg = HermesConfig(
+            modules={
+                "a": ModuleConfig(type=ModuleType.SCRIPT, script="./a.py"),
+                "b": ModuleConfig(type=ModuleType.SCRIPT, script="./b.py"),
+            },
+            execution=ExecutionConfig(
+                schedule=[
+                    {"name": "b", "rate_hz": 200.0},
+                    {"name": "a", "rate_hz": 1000.0},
+                ],
+            ),
+        )
+        assert cfg.get_module_names() == ["b", "a"]

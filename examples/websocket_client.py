@@ -79,7 +79,37 @@ async def main(host: str = "127.0.0.1", port: int = 8765) -> int:
                 elif msg["type"] == "event":
                     print(f"Event: {msg['event']}")
 
-            # 4. Receive telemetry frames
+            # 4. Inject a signal if the multi-module config is loaded
+            all_signals = [
+                f"{mod}.{sig['name']}"
+                for mod, info in schema.get("modules", {}).items()
+                for sig in info.get("signals", [])
+            ]
+            inject_signal = "inputs.thrust_cmd"
+            if inject_signal in all_signals:
+                inject_value = 100.0
+                print(f"\n=== Injecting {inject_signal} = {inject_value} ===")
+                await ws.send(
+                    json.dumps(
+                        {
+                            "action": "set",
+                            "params": {"signal": inject_signal, "value": inject_value},
+                        }
+                    )
+                )
+                # Drain the ack/error (may be interleaved with telemetry)
+                while True:
+                    data = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                    if isinstance(data, str):
+                        msg = json.loads(data)
+                        if msg.get("type") == "ack" and msg.get("action") == "set":
+                            print(f"Acknowledged: set {msg.get('signal')} = {msg.get('value')}")
+                            break
+                        if msg.get("type") == "error":
+                            print(f"Error: {msg.get('message')}")
+                            break
+
+            # 5. Receive telemetry frames
             print("\n=== Receiving telemetry (Ctrl+C to stop) ===")
             print("Frame  | Time (s) | Values")
             print("-" * 60)

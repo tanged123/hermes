@@ -5,7 +5,7 @@ communication. Supports language-agnostic modules (C, C++, Python, Rust)
 coordinated via shared memory, semaphores, and named pipes.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 # Backplane (IPC infrastructure)
 from hermes.backplane.shm import SharedMemoryManager

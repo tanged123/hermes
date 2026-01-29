@@ -1,7 +1,8 @@
 """Process lifecycle management for Hermes modules.
 
 This module provides the ProcessManager and ModuleProcess classes for
-spawning, controlling, and terminating module subprocesses.
+spawning, controlling, and terminating module subprocesses. Also supports
+in-process (inproc) modules that run as Python objects within the main process.
 
 Module Lifecycle:
     load()        stage()       step()...      terminate()
@@ -16,13 +17,14 @@ Module Lifecycle:
 
 from __future__ import annotations
 
+import importlib
 import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import structlog
 
@@ -32,6 +34,15 @@ if TYPE_CHECKING:
     from hermes.core.config import HermesConfig, ModuleConfig
 
 log = structlog.get_logger()
+
+
+@runtime_checkable
+class InprocModuleProtocol(Protocol):
+    """Protocol for in-process module instances."""
+
+    def stage(self) -> None: ...
+    def step(self, dt: float) -> None: ...
+    def reset(self) -> None: ...
 
 
 class ModuleState(Enum):
@@ -244,11 +255,139 @@ class ModuleProcess:
         )
 
 
+class InprocModule:
+    """Manages an in-process Python module.
+
+    Wraps a Python object implementing InprocModuleProtocol,
+    providing the same lifecycle interface as ModuleProcess
+    but executing within the main process.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        instance: InprocModuleProtocol,
+    ) -> None:
+        self._name = name
+        self._instance = instance
+        self._state = ModuleState.INIT
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def state(self) -> ModuleState:
+        return self._state
+
+    @property
+    def instance(self) -> InprocModuleProtocol:
+        return self._instance
+
+    def stage(self) -> None:
+        """Stage the in-process module."""
+        if self._state != ModuleState.INIT:
+            raise RuntimeError(f"Cannot stage module in state {self._state}")
+        self._instance.stage()
+        self._state = ModuleState.STAGED
+        log.debug("Inproc module staged", module=self._name)
+
+    def step(self, dt: float) -> None:
+        """Step the in-process module."""
+        if self._state == ModuleState.STAGED:
+            self._state = ModuleState.RUNNING
+        self._instance.step(dt)
+
+    def reset(self) -> None:
+        """Reset the in-process module."""
+        self._instance.reset()
+        self._state = ModuleState.INIT
+
+    def terminate(self) -> None:
+        """Terminate the in-process module (no-op for inproc)."""
+        self._state = ModuleState.DONE
+
+    def get_info(self) -> ModuleInfo:
+        return ModuleInfo(
+            name=self._name,
+            pid=None,
+            state=self._state,
+            shm_name="",
+        )
+
+
+def _create_inproc_module(
+    name: str,
+    config: ModuleConfig,
+    shm: SharedMemoryManager,
+) -> InprocModule:
+    """Create an in-process module from configuration.
+
+    Args:
+        name: Module name
+        config: Module configuration (script field is dotted import path)
+        shm: Shared memory manager
+
+    Returns:
+        InprocModule wrapping the instantiated Python object
+    """
+    if config.inproc_module is None:
+        raise ValueError(f"'inproc_module' required for inproc module {name}")
+
+    module_path = config.inproc_module
+    log.info("Loading inproc module", name=name, script=module_path)
+
+    # Import the module
+    mod = importlib.import_module(module_path)
+
+    # Find the module class - look for known classes or use convention
+    instance: InprocModuleProtocol | None = None
+
+    # Convention: module exposes a class with stage/step/reset
+    for attr_name in dir(mod):
+        attr = getattr(mod, attr_name)
+        if (
+            isinstance(attr, type)
+            and attr_name != "InprocModuleProtocol"
+            and isinstance(attr, type)
+            and hasattr(attr, "stage")
+            and hasattr(attr, "step")
+            and hasattr(attr, "reset")
+        ):
+            # Try to construct with known signatures
+            signal_names = [s.name for s in config.signals]
+            try:
+                instance = attr(
+                    module_name=name,
+                    shm=shm,
+                    signals=signal_names,
+                )
+            except TypeError:
+                # Try without signals arg (e.g., MockPhysicsModule)
+                try:
+                    instance = attr(
+                        module_name=name,
+                        shm=shm,
+                    )
+                except TypeError:
+                    continue
+            break
+
+    if instance is None:
+        raise ValueError(
+            f"No valid module class found in {module_path}. "
+            "Expected a class with stage(), step(dt), reset() methods."
+        )
+
+    return InprocModule(name=name, instance=instance)
+
+
 class ProcessManager:
     """Coordinates all module processes.
 
     Manages the lifecycle of multiple module processes, including
     shared memory setup, synchronization, and orderly shutdown.
+    Supports both subprocess (process/script) and in-process (inproc) modules.
     """
 
     def __init__(self, config: HermesConfig) -> None:
@@ -261,8 +400,14 @@ class ProcessManager:
         self._shm: SharedMemoryManager | None = None
         self._barrier: FrameBarrier | None = None
         self._modules: dict[str, ModuleProcess] = {}
+        self._inproc_modules: dict[str, InprocModule] = {}
         self._shm_name = f"/hermes_{os.getpid()}"
         self._barrier_name = f"/hermes_barrier_{os.getpid()}"
+
+    @property
+    def config(self) -> HermesConfig:
+        """Hermes configuration."""
+        return self._config
 
     @property
     def shm(self) -> SharedMemoryManager | None:
@@ -271,22 +416,28 @@ class ProcessManager:
 
     @property
     def modules(self) -> dict[str, ModuleProcess]:
-        """Loaded modules."""
+        """Loaded subprocess modules."""
         return self._modules
+
+    @property
+    def inproc_modules(self) -> dict[str, InprocModule]:
+        """Loaded in-process modules."""
+        return self._inproc_modules
 
     def initialize(self) -> None:
         """Create shared resources and load all modules.
 
         This sets up:
         1. Shared memory segment with all signals
-        2. Synchronization barrier
-        3. Module processes
+        2. Synchronization barrier (for subprocess modules)
+        3. Module processes / in-process modules
 
         If any step fails, previously created resources are cleaned up.
         """
         from hermes.backplane.shm import SharedMemoryManager
         from hermes.backplane.signals import SignalDescriptor, SignalFlags, SignalType
         from hermes.backplane.sync import FrameBarrier
+        from hermes.core.config import ModuleType
 
         log.info("Initializing process manager")
 
@@ -329,46 +480,61 @@ class ProcessManager:
             self._shm = None
             raise
 
-        # Create synchronization barrier
+        # Count subprocess modules for barrier
         module_count = len(self._config.modules)
         if module_count < 1:
-            # Clean up shared memory before raising
             self._shm.destroy()
             self._shm = None
             raise ValueError("Cannot initialize ProcessManager with zero modules")
 
-        self._barrier = FrameBarrier(self._barrier_name, module_count)
-        try:
-            self._barrier.create()
-            log.info("Barrier created", name=self._barrier_name, count=module_count)
-        except Exception:
-            # Clean up shared memory on barrier creation failure
-            self._shm.destroy()
-            self._shm = None
-            self._barrier = None
-            raise
+        subprocess_count = sum(
+            1
+            for mc in self._config.modules.values()
+            if mc.type in (ModuleType.PROCESS, ModuleType.SCRIPT)
+        )
 
-        # Load each module process
+        # Create synchronization barrier only if subprocess modules exist
+        if subprocess_count > 0:
+            self._barrier = FrameBarrier(self._barrier_name, subprocess_count)
+            try:
+                self._barrier.create()
+                log.info(
+                    "Barrier created",
+                    name=self._barrier_name,
+                    count=subprocess_count,
+                )
+            except Exception:
+                self._shm.destroy()
+                self._shm = None
+                self._barrier = None
+                raise
+
+        # Create module instances
         try:
             for name, module_config in self._config.modules.items():
-                module = ModuleProcess(
-                    name=name,
-                    config=module_config,
-                    shm_name=self._shm_name,
-                    barrier_name=self._barrier_name,
-                )
-                self._modules[name] = module
+                if module_config.type == ModuleType.INPROC:
+                    inproc = _create_inproc_module(name, module_config, self._shm)
+                    self._inproc_modules[name] = inproc
+                else:
+                    module = ModuleProcess(
+                        name=name,
+                        config=module_config,
+                        shm_name=self._shm_name,
+                        barrier_name=self._barrier_name,
+                    )
+                    self._modules[name] = module
         except Exception:
-            # Clean up all resources on module creation failure
-            self._barrier.destroy()
-            self._barrier = None
+            if self._barrier:
+                self._barrier.destroy()
+                self._barrier = None
             self._shm.destroy()
             self._shm = None
             self._modules.clear()
+            self._inproc_modules.clear()
             raise
 
     def load_all(self) -> None:
-        """Start all module processes."""
+        """Start all subprocess module processes."""
         for name in self._config.get_module_names():
             if name in self._modules:
                 self._modules[name].load()
@@ -378,35 +544,48 @@ class ProcessManager:
         for name in self._config.get_module_names():
             if name in self._modules:
                 self._modules[name].stage()
+            elif name in self._inproc_modules:
+                self._inproc_modules[name].stage()
 
     def step_all(self, timeout: float = 30.0) -> None:
         """Execute one simulation frame across all modules.
 
-        Uses barrier synchronization:
-        1. Signal all modules to execute their step
-        2. Wait for all modules to complete
+        For subprocess modules, uses barrier synchronization.
+        For inproc modules, calls step() directly in execution order.
 
         Args:
-            timeout: Maximum seconds to wait for all modules to complete
+            timeout: Maximum seconds to wait for subprocess modules
 
         Raises:
             RuntimeError: If not initialized
-            TimeoutError: If modules don't complete within timeout
+            TimeoutError: If subprocess modules don't complete within timeout
         """
-        if self._barrier is None:
+        if self._shm is None:
             raise RuntimeError("ProcessManager not initialized")
 
-        # Mark modules as running (idempotent after first call)
-        for module in self._modules.values():
-            module.mark_running()
+        dt = self._config.get_dt()
 
-        # Signal all modules to step
-        self._barrier.signal_step()
+        # Step subprocess modules via barrier (if any exist)
+        if self._modules:
+            if self._barrier is None:
+                raise RuntimeError("ProcessManager barrier not initialized")
 
-        # Wait for all modules to complete
-        if not self._barrier.wait_all_done(timeout=timeout):
-            log.error("Timeout waiting for modules to complete step", timeout=timeout)
-            raise TimeoutError(f"Modules did not complete within {timeout}s")
+            for module in self._modules.values():
+                module.mark_running()
+
+            self._barrier.signal_step()
+
+            if not self._barrier.wait_all_done(timeout=timeout):
+                log.error(
+                    "Timeout waiting for modules to complete step",
+                    timeout=timeout,
+                )
+                raise TimeoutError(f"Modules did not complete within {timeout}s")
+
+        # Step inproc modules in execution order
+        for name in self._config.get_module_names():
+            if name in self._inproc_modules:
+                self._inproc_modules[name].step(dt)
 
     def update_time(self, frame: int, time_ns: int) -> None:
         """Update frame number and simulation time in shared memory.
@@ -427,6 +606,8 @@ class ProcessManager:
         for name in reversed(self._config.get_module_names()):
             if name in self._modules:
                 self._modules[name].terminate()
+            elif name in self._inproc_modules:
+                self._inproc_modules[name].terminate()
 
         # Clean up IPC resources
         if self._barrier:
@@ -440,8 +621,12 @@ class ProcessManager:
         log.info("All modules terminated")
 
     def get_module(self, name: str) -> ModuleProcess | None:
-        """Get a module by name."""
+        """Get a subprocess module by name."""
         return self._modules.get(name)
+
+    def get_inproc_module(self, name: str) -> InprocModule | None:
+        """Get an in-process module by name."""
+        return self._inproc_modules.get(name)
 
     def __enter__(self) -> ProcessManager:
         """Context manager entry - initialize resources."""
