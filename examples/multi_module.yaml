@@ -49,7 +49,7 @@ wiring:
   #   gain: 0.0174533
 
 execution:
-  mode: realtime
+  mode: afap
   rate_hz: 100.0
   schedule:
     - inputs    # Injection first (writes commands)

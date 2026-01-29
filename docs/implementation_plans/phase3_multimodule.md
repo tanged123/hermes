@@ -568,6 +568,66 @@ Include wiring information in schema sent to WebSocket clients.
 
 ---
 
+## Task 3.7: Multi-Rate Scheduling
+
+**Priority:** P1 (High)
+**Blocked By:** Task 3.4
+
+### Objective
+Support modules running at different rates within the same simulation. Physics modules typically need higher fidelity (e.g., 1000 Hz) than control/flight software modules (e.g., 200 Hz).
+
+### Concept
+The scheduler defines a **major frame** at the slowest module rate. Faster modules step multiple times per major frame. Wire routing happens at the major frame boundary after all sub-steps complete.
+
+```
+Major frame at 200 Hz (5ms):
+  ┌─────────────────────────────────────────────┐
+  │  flight_sw.step(dt=5ms)        # 1x @ 200Hz │
+  │  physics.step(dt=1ms)          # 5x @ 1kHz  │
+  │  physics.step(dt=1ms)                        │
+  │  physics.step(dt=1ms)                        │
+  │  physics.step(dt=1ms)                        │
+  │  physics.step(dt=1ms)                        │
+  │  wire_router.route()                          │
+  └─────────────────────────────────────────────┘
+```
+
+### Configuration
+```yaml
+execution:
+  mode: realtime
+  rate_hz: 200.0       # Major frame rate (GCD or explicit)
+  schedule:
+    - name: flight_sw
+      rate_hz: 200.0   # 1x per major frame
+    - name: physics
+      rate_hz: 1000.0  # 5x per major frame
+```
+
+### Implementation Notes
+- Each schedule entry gains an optional `rate_hz` (defaults to execution `rate_hz`)
+- Module rates must be integer multiples of the major frame rate
+- Scheduler computes step count per module: `module_rate / major_rate`
+- Each module receives its own `dt` based on its rate
+- Wire routing executes once per major frame (after all sub-steps)
+- The `step(count)` parameter on modules becomes meaningful here
+
+### Validation Rules
+- Module `rate_hz` must be >= execution `rate_hz`
+- Module `rate_hz` must be an integer multiple of execution `rate_hz`
+- Clear error if rates are incompatible
+
+### Acceptance Criteria
+- [ ] Per-module `rate_hz` in schedule config
+- [ ] Faster modules step multiple times per major frame
+- [ ] Each module gets correct `dt` for its rate
+- [ ] Wire routing at major frame boundary
+- [ ] Validation rejects non-integer rate ratios
+- [ ] Backwards compatible (omitted `rate_hz` defaults to execution rate)
+- [ ] Integration test with 2 modules at different rates
+
+---
+
 ## Phase 3 Completion Checklist
 
 - [ ] All Phase 3 tasks complete
@@ -575,6 +635,7 @@ Include wiring information in schema sent to WebSocket clients.
 - [ ] Injection module works
 - [ ] Mock physics module works
 - [ ] Wire routing works with gain/offset
+- [ ] Multi-rate scheduling works
 - [ ] Multi-module schema served to WebSocket clients
 - [ ] Integration tests pass
 - [ ] Example configuration works
@@ -633,11 +694,13 @@ wiring:
 
 execution:
   mode: afap
-  rate_hz: 100.0
+  rate_hz: 200.0
   end_time: 10.0
   schedule:
-    - inputs    # Injection first
-    - physics   # Physics second
+    - name: inputs                # Injection first
+      rate_hz: 200.0              # Major frame rate
+    - name: physics               # Physics second
+      rate_hz: 1000.0             # 5x per major frame
 
 server:
   enabled: true
@@ -683,7 +746,8 @@ server:
 │                             │                                            │
 │  ┌──────────────────────────▼───────────────────────────────────────┐  │
 │  │                        Scheduler                                  │  │
-│  │  • Frame loop with wire routing                                  │  │
+│  │  • Major frame loop with wire routing                            │  │
+│  │  • Multi-rate sub-stepping per module                            │  │
 │  │  • Time tracking                                                  │  │
 │  │  • Mode control                                                   │  │
 │  └──────────────────────────────────────────────────────────────────┘  │
