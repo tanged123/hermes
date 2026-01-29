@@ -3,7 +3,7 @@
 # This configuration demonstrates:
 # - Multiple inproc modules (injection + mock physics)
 # - Signal wiring between modules with gain/offset
-# - Execution scheduling order
+# - Multi-rate scheduling (injection @ 200Hz, physics @ 1000Hz)
 #
 # Run:
 #   hermes run examples/multi_module.yaml
@@ -49,11 +49,13 @@ wiring:
   #   gain: 0.0174533
 
 execution:
-  mode: afap
-  rate_hz: 100.0
+  mode: realtime
+  rate_hz: 200.0
   schedule:
-    - inputs    # Injection first (writes commands)
-    - physics   # Physics second (reads commands, computes dynamics)
+    - name: inputs     # Injection first (writes commands)
+      rate_hz: 200.0   # 1x per major frame
+    - name: physics    # Physics second (reads commands, computes dynamics)
+      rate_hz: 1000.0  # 5x per major frame
 
 server:
   enabled: true

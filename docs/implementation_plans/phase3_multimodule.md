@@ -604,18 +604,83 @@ execution:
       rate_hz: 1000.0  # 5x per major frame
 ```
 
-### Implementation Notes
-- Each schedule entry gains an optional `rate_hz` (defaults to execution `rate_hz`)
-- Module rates must be integer multiples of the major frame rate
-- Scheduler computes step count per module: `module_rate / major_rate`
-- Each module receives its own `dt` based on its rate
-- Wire routing executes once per major frame (after all sub-steps)
-- The `step(count)` parameter on modules becomes meaningful here
+### Implementation
+
+#### 1. Config (`src/hermes/core/config.py`)
+
+Add `ScheduleEntry` model with backwards-compatible string coercion:
+
+```python
+class ScheduleEntry(BaseModel):
+    """Single entry in execution schedule."""
+
+    name: str
+    rate_hz: float | None = None  # None = inherit execution.rate_hz
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_from_string(cls, value: Any) -> dict[str, Any]:
+        if isinstance(value, str):
+            return {"name": value}
+        return value
+```
+
+Change `ExecutionConfig.schedule` from `list[str]` to `list[ScheduleEntry]`.
+
+Add model validator on `ExecutionConfig` to check integer multiple constraint:
+```python
+ratio = module_rate / major_rate
+if abs(ratio - round(ratio)) > 1e-6:
+    raise ValueError(...)
+```
+
+Add `ExecutionConfig.get_major_frame_rate_hz()` — returns min rate across entries.
+
+Update `HermesConfig.get_module_names()` to extract `.name` from entries.
+
+#### 2. Scheduler (`src/hermes/core/scheduler.py`)
+
+In `__init__`, compute `_dt_ns` from major frame rate and pre-compute per-module substeps:
+```python
+self._module_substeps: dict[str, tuple[int, float]] = {}
+# e.g. {"inputs": (1, 0.005), "physics": (5, 0.001)}
+```
+
+In `step()`, when schedule exists, iterate modules in order and sub-step each:
+```python
+for entry in schedule:
+    substeps, module_dt = self._module_substeps[entry.name]
+    inproc = self._pm.get_inproc_module(entry.name)
+    for _ in range(substeps):
+        inproc.step(module_dt)
+```
+
+Wire routing once per major frame (before modules, same as current).
+Fallback to `step_all()` when no schedule is configured.
+
+#### 3. ProcessManager (`src/hermes/core/process.py`)
+
+Minimal changes. `get_inproc_module()` already exists. `step_all()` stays for
+the no-schedule fallback. May need `step_all()` to accept optional `dt` if
+major frame rate differs from `config.rate_hz`.
 
 ### Validation Rules
-- Module `rate_hz` must be >= execution `rate_hz`
-- Module `rate_hz` must be an integer multiple of execution `rate_hz`
+- Module `rate_hz` must be >= major frame rate
+- Module `rate_hz` must be an integer multiple of major frame rate
 - Clear error if rates are incompatible
+
+### Test Plan
+- **Config**: `ScheduleEntry` string coercion, multi-rate validation (valid + invalid), `get_major_frame_rate_hz()`, backwards compat
+- **Scheduler**: Substep computation, verify fast module steps Nx with correct dt
+- **Integration**: Injection @ 200Hz + physics @ 1000Hz, verify state accumulates 5x per major frame
+
+### Files to Modify
+- `src/hermes/core/config.py`
+- `src/hermes/core/scheduler.py`
+- `src/hermes/core/process.py` (minor)
+- `tests/test_core/test_config.py`
+- `tests/test_core/test_scheduler.py`
+- `tests/test_integration/test_multimodule.py`
 
 ### Acceptance Criteria
 - [ ] Per-module `rate_hz` in schedule config

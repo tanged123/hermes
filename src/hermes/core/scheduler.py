@@ -66,10 +66,19 @@ class Scheduler:
         self._config = config
         self._frame: int = 0
         self._time_ns: int = 0  # Time in nanoseconds for determinism
-        self._dt_ns: int = config.get_dt_ns()  # Precomputed timestep in ns
+        self._dt_ns: int = config.get_dt_ns()  # Major frame timestep in ns
         self._running: bool = False
         self._paused: bool = False
         self._router: WireRouter | None = None
+
+        # Pre-compute per-module substep counts and dt values
+        self._module_substeps: dict[str, tuple[int, float]] = {}
+        major_rate = config.get_major_frame_rate_hz()
+        for entry in config.schedule:
+            entry_rate = entry.rate_hz if entry.rate_hz is not None else config.rate_hz
+            substeps = round(entry_rate / major_rate)
+            module_dt = 1.0 / entry_rate
+            self._module_substeps[entry.name] = (substeps, module_dt)
 
     @property
     def frame(self) -> int:
@@ -151,10 +160,13 @@ class Scheduler:
         log.debug("Simulation staged", frame=self._frame, time_ns=self._time_ns)
 
     def step(self, count: int = 1) -> None:
-        """Execute N simulation frames.
+        """Execute N major frames.
+
+        Each major frame routes wires, then steps each module according to
+        its configured rate (faster modules sub-step multiple times).
 
         Args:
-            count: Number of frames to execute (default: 1)
+            count: Number of major frames to execute (default: 1)
 
         Raises:
             ValueError: If count is not positive
@@ -170,8 +182,18 @@ class Scheduler:
             if self._router is not None:
                 self._router.route()
 
-            # Execute all modules for this frame
-            self._pm.step_all()
+            # Execute modules
+            if self._module_substeps:
+                # Multi-rate: step each module per its rate
+                for entry in self._config.schedule:
+                    substeps, module_dt = self._module_substeps[entry.name]
+                    inproc = self._pm.get_inproc_module(entry.name)
+                    if inproc is not None:
+                        for _ in range(substeps):
+                            inproc.step(module_dt)
+            else:
+                # No schedule: step all modules at base rate
+                self._pm.step_all()
 
             # Advance simulation state using integer arithmetic for determinism
             self._frame += 1

@@ -118,6 +118,37 @@ class WireConfig(BaseModel):
 _NANOSECONDS_PER_SECOND: int = 1_000_000_000
 
 
+class ScheduleEntry(BaseModel):
+    """Single entry in execution schedule.
+
+    Supports both bare string and object formats for backwards compatibility::
+
+        # Bare string (inherits execution.rate_hz)
+        schedule: [inputs, physics]
+
+        # Object with per-module rate
+        schedule:
+          - name: inputs
+            rate_hz: 200.0
+          - name: physics
+            rate_hz: 1000.0
+    """
+
+    name: str
+    """Module name."""
+
+    rate_hz: float | None = None
+    """Module execution rate in Hz. None = inherit from execution.rate_hz."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_from_string(cls, value: Any) -> dict[str, Any]:
+        """Allow bare string format for backwards compatibility."""
+        if isinstance(value, str):
+            return {"name": value}
+        return value
+
+
 class ExecutionConfig(BaseModel):
     """Execution and scheduling settings.
 
@@ -138,8 +169,8 @@ class ExecutionConfig(BaseModel):
     end_time: float | None = None
     """Simulation end time in seconds. None = run until stopped."""
 
-    schedule: list[str] = Field(default_factory=list)
-    """Explicit execution order. Empty = registration order."""
+    schedule: list[ScheduleEntry] = Field(default_factory=list)
+    """Execution schedule with optional per-module rates. Empty = registration order."""
 
     @field_validator("rate_hz")
     @classmethod
@@ -149,14 +180,49 @@ class ExecutionConfig(BaseModel):
             raise ValueError("rate_hz must be positive")
         return v
 
+    @model_validator(mode="after")
+    def _validate_multi_rate(self) -> ExecutionConfig:
+        """Validate that module rates are integer multiples of major frame rate."""
+        if not self.schedule:
+            return self
+
+        major_rate = self.get_major_frame_rate_hz()
+
+        for entry in self.schedule:
+            entry_rate = entry.rate_hz if entry.rate_hz is not None else self.rate_hz
+            if entry_rate <= 0:
+                raise ValueError(f"Module '{entry.name}' rate must be positive")
+            ratio = entry_rate / major_rate
+            if abs(ratio - round(ratio)) > 1e-6:
+                raise ValueError(
+                    f"Module '{entry.name}' rate {entry_rate} Hz is not an "
+                    f"integer multiple of major frame rate {major_rate} Hz"
+                )
+
+        return self
+
+    def get_major_frame_rate_hz(self) -> float:
+        """Get major frame rate (slowest module rate).
+
+        Returns the minimum rate across all schedule entries. If no schedule
+        or no entries have explicit rates, returns execution rate_hz.
+        """
+        if not self.schedule:
+            return self.rate_hz
+
+        rates = [
+            entry.rate_hz if entry.rate_hz is not None else self.rate_hz for entry in self.schedule
+        ]
+        return min(rates)
+
     def get_dt_ns(self) -> int:
-        """Get timestep in nanoseconds.
+        """Get major frame timestep in nanoseconds.
 
         Returns:
             Timestep as integer nanoseconds for deterministic simulation.
             Rounded to nearest nanosecond for rates that don't divide evenly.
         """
-        return round(_NANOSECONDS_PER_SECOND / self.rate_hz)
+        return round(_NANOSECONDS_PER_SECOND / self.get_major_frame_rate_hz())
 
     def get_end_time_ns(self) -> int | None:
         """Get end time in nanoseconds.
@@ -218,9 +284,9 @@ class HermesConfig(BaseModel):
                 raise ValueError(f"Wire destination module not found: {dst_module}")
 
         # Validate schedule references
-        for name in self.execution.schedule:
-            if name not in module_names:
-                raise ValueError(f"Schedule references unknown module: {name}")
+        for entry in self.execution.schedule:
+            if entry.name not in module_names:
+                raise ValueError(f"Schedule references unknown module: {entry.name}")
 
         return self
 
@@ -265,5 +331,5 @@ class HermesConfig(BaseModel):
     def get_module_names(self) -> list[str]:
         """Get module names in execution order."""
         if self.execution.schedule:
-            return self.execution.schedule
+            return [entry.name for entry in self.execution.schedule]
         return list(self.modules.keys())

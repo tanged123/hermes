@@ -540,3 +540,115 @@ execution:
             pm.shm.set_signal("inputs.cmd", 20.0)
             sched.step()
             assert pm.shm.get_signal("physics.input") == pytest.approx(20.0)
+
+
+class TestMultiRateScheduling:
+    """Tests for multi-rate module execution."""
+
+    def test_physics_steps_more_than_injection(self, tmp_path: Path) -> None:
+        """Physics at 1000Hz should accumulate 5x state per major frame at 200Hz.
+
+        Mock physics: state += input * dt per step.
+        At 1000 Hz with dt=0.001s, 5 steps with input=1.0:
+          state = 5 * (1.0 * 0.001) = 0.005
+        """
+        config_path = _write_config(
+            tmp_path,
+            """
+version: "0.2"
+modules:
+  inputs:
+    type: inproc
+    inproc_module: hermes.modules.injection
+    signals:
+      - name: cmd
+        type: f64
+        writable: true
+  physics:
+    type: inproc
+    inproc_module: hermes.modules.mock_physics
+    signals:
+      - name: input
+        type: f64
+        writable: true
+      - name: output
+        type: f64
+      - name: state
+        type: f64
+
+wiring:
+  - src: inputs.cmd
+    dst: physics.input
+
+execution:
+  mode: single_frame
+  rate_hz: 200.0
+  schedule:
+    - name: inputs
+      rate_hz: 200.0
+    - name: physics
+      rate_hz: 1000.0
+""",
+        )
+        config = HermesConfig.from_yaml(config_path)
+        with ProcessManager(config) as pm:
+            sched = Scheduler(pm, config.execution)
+            sched.stage()
+
+            # Inject input=1.0
+            pm.shm.set_signal("inputs.cmd", 1.0)
+
+            # One major frame: physics steps 5x at dt=0.001
+            sched.step()
+
+            # state = 5 * (1.0 * 0.001) = 0.005
+            assert pm.shm.get_signal("physics.state") == pytest.approx(0.005)
+            # output = input * 2 + state = 1.0 * 2.0 + 0.005 = 2.005
+            assert pm.shm.get_signal("physics.output") == pytest.approx(2.005)
+
+    def test_multi_rate_time_advances_correctly(self, tmp_path: Path) -> None:
+        """Simulation time should advance by major frame dt (5ms at 200Hz)."""
+        config_path = _write_config(
+            tmp_path,
+            """
+version: "0.2"
+modules:
+  inputs:
+    type: inproc
+    inproc_module: hermes.modules.injection
+    signals:
+      - name: cmd
+        type: f64
+        writable: true
+  physics:
+    type: inproc
+    inproc_module: hermes.modules.mock_physics
+    signals:
+      - name: input
+        type: f64
+        writable: true
+      - name: output
+        type: f64
+      - name: state
+        type: f64
+
+execution:
+  mode: single_frame
+  rate_hz: 200.0
+  schedule:
+    - name: inputs
+      rate_hz: 200.0
+    - name: physics
+      rate_hz: 1000.0
+""",
+        )
+        config = HermesConfig.from_yaml(config_path)
+        with ProcessManager(config) as pm:
+            sched = Scheduler(pm, config.execution)
+            sched.stage()
+
+            sched.step(10)  # 10 major frames
+
+            # 10 frames at 200 Hz = 50ms
+            assert sched.time == pytest.approx(0.05)
+            assert sched.frame == 10
