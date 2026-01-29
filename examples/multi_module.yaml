@@ -49,9 +49,8 @@ wiring:
   #   gain: 0.0174533
 
 execution:
-  mode: afap
+  mode: realtime
   rate_hz: 100.0
-  end_time: 10.0
   schedule:
     - inputs    # Injection first (writes commands)
     - physics   # Physics second (reads commands, computes dynamics)

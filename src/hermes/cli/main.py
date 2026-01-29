@@ -130,7 +130,7 @@ def run(config_path: Path, verbose: bool, quiet: bool, no_server: bool, port: in
                             port=server_port,
                             telemetry_hz=config.server.telemetry_hz,
                         )
-                        server = HermesServer(pm.shm, sched, ws_config)
+                        server = HermesServer(pm.shm, sched, ws_config, hermes_config=config)
                         await server.start_background()
                         tasks.append(server.start_telemetry_loop())
                         log.info("WebSocket server started", port=server_port)
