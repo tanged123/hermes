@@ -79,6 +79,14 @@ class Scheduler:
             substeps = round(entry_rate / major_rate)
             module_dt = 1.0 / entry_rate
             self._module_substeps[entry.name] = (substeps, module_dt)
+            if substeps > 1:
+                log.info(
+                    "Multi-rate module",
+                    module=entry.name,
+                    rate_hz=entry_rate,
+                    substeps=substeps,
+                    dt=module_dt,
+                )
 
     @property
     def frame(self) -> int:
@@ -199,7 +207,14 @@ class Scheduler:
             self._frame += 1
             self._time_ns = self._frame * self._dt_ns
 
-        log.debug("Stepped", frames=count, frame=self._frame, time_ns=self._time_ns)
+        # Build schedule summary for debug: "inputs:1 physics:5"
+        if self._module_substeps:
+            sched_str = " ".join(
+                f"{name}:{substeps}" for name, (substeps, _) in self._module_substeps.items()
+            )
+            log.debug("Stepped", frame=self._frame, time_ns=self._time_ns, schedule=sched_str)
+        else:
+            log.debug("Stepped", frame=self._frame, time_ns=self._time_ns)
 
     def reset(self) -> None:
         """Reset simulation to initial state.
@@ -237,7 +252,7 @@ class Scheduler:
         log.info(
             "Starting simulation loop",
             mode=self._config.mode.value,
-            rate_hz=self._config.rate_hz,
+            major_frame_hz=self._config.get_major_frame_rate_hz(),
             end_time=self._config.end_time,
         )
 
