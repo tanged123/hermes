@@ -44,6 +44,7 @@ from hermes.server.telemetry import TelemetryEncoder
 
 if TYPE_CHECKING:
     from hermes.backplane.shm import SharedMemoryManager
+    from hermes.core.config import HermesConfig
     from hermes.core.scheduler import Scheduler
 
 
@@ -99,6 +100,7 @@ class HermesServer:
         shm: SharedMemoryManager,
         scheduler: Scheduler | None = None,
         config: ServerConfig | None = None,
+        hermes_config: HermesConfig | None = None,
     ) -> None:
         """Initialize the Hermes server.
 
@@ -106,10 +108,12 @@ class HermesServer:
             shm: Shared memory manager to read telemetry from
             scheduler: Optional scheduler for control commands
             config: Server configuration
+            hermes_config: Full Hermes config for schema metadata (wiring, signal info)
         """
         self._shm = shm
         self._scheduler = scheduler
         self._config = config or ServerConfig()
+        self._hermes_config = hermes_config
 
         self._clients: dict[ServerConnection, ClientState] = {}
         self._server: Server | None = None
@@ -228,14 +232,57 @@ class HermesServer:
             log.info("Client disconnected", remote=remote, clients=len(self._clients))
 
     async def _send_schema(self, client: ClientState) -> None:
-        """Send signal schema to a client."""
-        # Build schema from shared memory signals
+        """Send signal schema to a client.
+
+        If hermes_config is available, includes full signal metadata
+        (unit, writable) and wiring configuration. Otherwise falls back
+        to basic schema from shared memory signal names.
+        """
+        if self._hermes_config is not None:
+            schema_payload = self._build_rich_schema()
+        else:
+            schema_payload = self._build_basic_schema()
+
+        msg = make_schema(schema_payload)
+        await client.ws.send(msg.to_json())
+        log.debug("Sent schema", remote=client.remote)
+
+    def _build_rich_schema(self) -> dict[str, Any]:
+        """Build schema with full metadata from HermesConfig."""
+        assert self._hermes_config is not None
+
+        modules: dict[str, Any] = {}
+        for mod_name, mod_config in self._hermes_config.modules.items():
+            sig_list: list[dict[str, Any]] = []
+            for sig in mod_config.signals:
+                entry: dict[str, Any] = {"name": sig.name, "type": sig.type}
+                if sig.unit:
+                    entry["unit"] = sig.unit
+                if sig.writable:
+                    entry["writable"] = True
+                sig_list.append(entry)
+            modules[mod_name] = {"signals": sig_list}
+
+        wiring: list[dict[str, Any]] = []
+        for wire in self._hermes_config.wiring:
+            wire_entry: dict[str, Any] = {"src": wire.src, "dst": wire.dst}
+            if wire.gain != 1.0:
+                wire_entry["gain"] = wire.gain
+            if wire.offset != 0.0:
+                wire_entry["offset"] = wire.offset
+            wiring.append(wire_entry)
+
+        result: dict[str, Any] = {"modules": modules}
+        if wiring:
+            result["wiring"] = wiring
+        return result
+
+    def _build_basic_schema(self) -> dict[str, Any]:
+        """Build basic schema from shared memory signal names."""
         signals = self._shm.signal_names()
 
-        # Group signals by module prefix
         modules: dict[str, dict[str, Any]] = {}
         for sig_name in signals:
-            # Parse module.signal format
             if "." in sig_name:
                 module, signal = sig_name.rsplit(".", 1)
             else:
@@ -247,9 +294,7 @@ class HermesServer:
 
             modules[module]["signals"].append({"name": signal, "type": "f64"})
 
-        msg = make_schema(modules)
-        await client.ws.send(msg.to_json())
-        log.debug("Sent schema", remote=client.remote, modules=list(modules.keys()))
+        return {"modules": modules}
 
     async def _handle_message(self, client: ClientState, message: str) -> None:
         """Handle a text message from a client."""
