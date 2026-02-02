@@ -248,19 +248,37 @@ class HermesServer:
         log.debug("Sent schema", remote=client.remote)
 
     def _build_rich_schema(self) -> dict[str, Any]:
-        """Build schema with full metadata from HermesConfig."""
+        """Build schema with full metadata from HermesConfig.
+
+        For icarus modules (no config-declared signals), signal metadata
+        is derived from the shared memory signal names at runtime.
+        """
         assert self._hermes_config is not None
+        from hermes.core.config import ModuleType
+
+        # Get all shm signal names for icarus fallback
+        shm_signal_names = self._shm.signal_names()
 
         modules: dict[str, Any] = {}
         for mod_name, mod_config in self._hermes_config.modules.items():
             sig_list: list[dict[str, Any]] = []
-            for sig in mod_config.signals:
-                entry: dict[str, Any] = {"name": sig.name, "type": sig.type}
-                if sig.unit:
-                    entry["unit"] = sig.unit
-                if sig.writable:
-                    entry["writable"] = True
-                sig_list.append(entry)
+
+            if mod_config.type == ModuleType.ICARUS:
+                # Icarus signals are discovered at runtime; pull from shm
+                prefix = f"{mod_name}."
+                for sig_name in shm_signal_names:
+                    if sig_name.startswith(prefix):
+                        local_name = sig_name[len(prefix) :]
+                        sig_list.append({"name": local_name, "type": "f64"})
+            else:
+                for sig in mod_config.signals:
+                    entry: dict[str, Any] = {"name": sig.name, "type": sig.type}
+                    if sig.unit:
+                        entry["unit"] = sig.unit
+                    if sig.writable:
+                        entry["writable"] = True
+                    sig_list.append(entry)
+
             modules[mod_name] = {"signals": sig_list}
 
         wiring: list[dict[str, Any]] = []

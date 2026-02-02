@@ -24,10 +24,13 @@ wiring:
     dst: rocket.Rocket.Engine.throttle_cmd
 
 execution:
-  mode: afap
+  mode: realtime
   rate_hz: 100.0
-  end_time: 10.0
+  end_time: 60.0
   schedule: [inputs, rocket]
 
 server:
-  enabled: false
+  enabled: true
+  host: "0.0.0.0"
+  port: 8765
+  telemetry_hz: 60.0

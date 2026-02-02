@@ -48,18 +48,47 @@ async def main(host: str = "127.0.0.1", port: int = 8765) -> int:
                 for signal in module_info.get("signals", []):
                     print(f"  - {signal['name']} ({signal['type']})")
 
-            # 2. Subscribe to all signals
+            # 2. Subscribe to signals (specific patterns or all)
+            # Build smart subscription: prefer interesting signals if available
+            all_signals = [
+                f"{mod}.{sig['name']}"
+                for mod, info in schema.get("modules", {}).items()
+                for sig in info.get("signals", [])
+            ]
+
+            # Default: subscribe to everything
+            subscribe_patterns: list[str] = ["*"]
+
+            # If icarus-style signals exist, pick the interesting ones
+            interesting_suffixes = [
+                "position_lla.alt",
+                "velocity_body.x",
+                "total_mass",
+                "Engine.thrust",
+                "Engine.throttle_cmd",
+                "FuelTank.fuel_mass",
+                "euler_zyx.pitch",
+            ]
+            interesting = [
+                s for s in all_signals if any(s.endswith(sfx) for sfx in interesting_suffixes)
+            ]
+            if interesting:
+                subscribe_patterns = interesting
+
             print("\n=== Subscribing to signals ===")
             await ws.send(
                 json.dumps(
                     {
                         "action": "subscribe",
-                        "params": {"signals": ["*"]},  # Subscribe to all
+                        "params": {"signals": subscribe_patterns},
                     }
                 )
             )
             ack = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
-            print(f"Subscribed to {ack.get('count', 0)} signals: {ack.get('signals', [])}")
+            subscribed_signals: list[str] = ack.get("signals", [])
+            print(f"Subscribed to {ack.get('count', 0)} signals:")
+            for s in subscribed_signals:
+                print(f"  - {s}")
 
             # 3. Resume simulation
             print("\n=== Resuming simulation ===")
@@ -80,14 +109,12 @@ async def main(host: str = "127.0.0.1", port: int = 8765) -> int:
                     print(f"Event: {msg['event']}")
 
             # 4. Inject a signal if the multi-module config is loaded
-            all_signals = [
-                f"{mod}.{sig['name']}"
-                for mod, info in schema.get("modules", {}).items()
-                for sig in info.get("signals", [])
-            ]
-            inject_signal = "inputs.thrust_cmd"
+            # Try icarus throttle first, then multi_module thrust_cmd
+            inject_signal = (
+                "inputs.throttle" if "inputs.throttle" in all_signals else "inputs.thrust_cmd"
+            )
             if inject_signal in all_signals:
-                inject_value = 100.0
+                inject_value = 1.0 if "throttle" in inject_signal else 100.0
                 print(f"\n=== Injecting {inject_signal} = {inject_value} ===")
                 await ws.send(
                     json.dumps(
@@ -110,9 +137,14 @@ async def main(host: str = "127.0.0.1", port: int = 8765) -> int:
                             break
 
             # 5. Receive telemetry frames
+            # Build short display names from subscribed signals
+            short_names = [s.rsplit(".", 1)[-1] if "." in s else s for s in subscribed_signals]
+
             print("\n=== Receiving telemetry (Ctrl+C to stop) ===")
-            print("Frame  | Time (s) | Values")
-            print("-" * 60)
+            # Print header row
+            header_vals = "  ".join(f"{n:>12s}" for n in short_names[:8])
+            print(f"{'Frame':>6s} | {'Time':>8s} | {header_vals}")
+            print("-" * (20 + 14 * min(len(short_names), 8)))
 
             frame_count = 0
             while True:
@@ -131,10 +163,8 @@ async def main(host: str = "127.0.0.1", port: int = 8765) -> int:
 
                                 # Print every 10th frame to avoid flooding
                                 if frame_count % 10 == 0:
-                                    values_str = ", ".join(f"{v:.3f}" for v in values[:4])
-                                    if len(values) > 4:
-                                        values_str += "..."
-                                    print(f"{frame:6d} | {time_s:8.3f} | [{values_str}]")
+                                    vals_str = "  ".join(f"{v:>12.3f}" for v in values[:8])
+                                    print(f"{frame:6d} | {time_s:8.3f} | {vals_str}")
 
                                 frame_count += 1
                             else:

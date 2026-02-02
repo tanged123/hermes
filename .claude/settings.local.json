@@ -31,7 +31,8 @@
       "Bash(./scripts/test.sh:*)",
       "Bash(./scripts/dev.sh:*)",
       "Bash(python:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(git push:*)"
     ]
   }
 }
