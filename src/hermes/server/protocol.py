@@ -150,18 +150,18 @@ class Command:
 # Factory functions for creating server messages
 
 
-def make_schema(modules: dict[str, dict[str, Any]]) -> ServerMessage:
-    """Create schema message with signal definitions.
+def make_schema(payload: dict[str, Any]) -> ServerMessage:
+    """Create schema message with signal definitions and optional wiring.
 
     Args:
-        modules: Dict of module name -> signal definitions
+        payload: Schema payload containing 'modules' and optionally 'wiring'
 
     Returns:
         Schema message ready for transmission
     """
     return ServerMessage(
         type=ServerMessageType.SCHEMA,
-        payload={"modules": modules},
+        payload=payload,
     )
 
 

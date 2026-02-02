@@ -254,7 +254,7 @@ class TestFactoryFunctions:
                 ]
             },
         }
-        msg = make_schema(modules)
+        msg = make_schema({"modules": modules})
 
         assert msg.type == ServerMessageType.SCHEMA
         assert msg.payload == {"modules": modules}

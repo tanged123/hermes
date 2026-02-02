@@ -348,3 +348,85 @@ class TestSchedulerDeterminism:
 
         # All runs should be identical
         assert results[0] == results[1] == results[2]
+
+
+class TestMultiRateScheduler:
+    """Tests for multi-rate scheduling."""
+
+    @pytest.fixture
+    def multi_rate_config(self) -> ExecutionConfig:
+        """Config with 200 Hz base, physics at 1000 Hz."""
+        return ExecutionConfig(
+            mode=ExecutionMode.AFAP,
+            rate_hz=200.0,
+            schedule=[
+                {"name": "inputs", "rate_hz": 200.0},
+                {"name": "physics", "rate_hz": 1000.0},
+            ],
+        )
+
+    def test_substeps_computed(
+        self, mock_process_manager: MagicMock, multi_rate_config: ExecutionConfig
+    ) -> None:
+        """Should compute correct substep counts and dt values."""
+        sched = Scheduler(mock_process_manager, multi_rate_config)
+        assert sched._module_substeps["inputs"] == (1, pytest.approx(0.005))
+        assert sched._module_substeps["physics"] == (5, pytest.approx(0.001))
+
+    def test_dt_is_major_frame(
+        self, mock_process_manager: MagicMock, multi_rate_config: ExecutionConfig
+    ) -> None:
+        """Scheduler dt should be the major frame timestep."""
+        sched = Scheduler(mock_process_manager, multi_rate_config)
+        assert sched.dt == pytest.approx(0.005)  # 200 Hz
+
+    def test_fast_module_steps_more(
+        self, mock_process_manager: MagicMock, multi_rate_config: ExecutionConfig
+    ) -> None:
+        """Faster module should step more times per major frame."""
+        mock_inputs = MagicMock()
+        mock_physics = MagicMock()
+        mock_process_manager.get_inproc_module.side_effect = lambda name: {
+            "inputs": mock_inputs,
+            "physics": mock_physics,
+        }[name]
+
+        sched = Scheduler(mock_process_manager, multi_rate_config)
+        sched.step(1)
+
+        assert mock_inputs.step.call_count == 1
+        mock_inputs.step.assert_called_with(pytest.approx(0.005))
+
+        assert mock_physics.step.call_count == 5
+        mock_physics.step.assert_called_with(pytest.approx(0.001))
+
+    def test_time_advances_by_major_frame(
+        self, mock_process_manager: MagicMock, multi_rate_config: ExecutionConfig
+    ) -> None:
+        """Time should advance by major frame dt after each step."""
+        mock_process_manager.get_inproc_module.return_value = MagicMock()
+        sched = Scheduler(mock_process_manager, multi_rate_config)
+
+        sched.step(1)
+        assert sched.time == pytest.approx(0.005)
+
+        sched.step(1)
+        assert sched.time == pytest.approx(0.01)
+
+    def test_multi_step_accumulates(
+        self, mock_process_manager: MagicMock, multi_rate_config: ExecutionConfig
+    ) -> None:
+        """step(3) should execute 3 major frames."""
+        mock_inputs = MagicMock()
+        mock_physics = MagicMock()
+        mock_process_manager.get_inproc_module.side_effect = lambda name: {
+            "inputs": mock_inputs,
+            "physics": mock_physics,
+        }[name]
+
+        sched = Scheduler(mock_process_manager, multi_rate_config)
+        sched.step(3)
+
+        assert mock_inputs.step.call_count == 3
+        assert mock_physics.step.call_count == 15
+        assert sched.frame == 3

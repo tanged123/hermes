@@ -1,0 +1,3 @@
+[submodule "references/icarus"]
+	path = references/icarus
+	url = git@github.com:tanged123/icarus.git

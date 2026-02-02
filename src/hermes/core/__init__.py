@@ -10,7 +10,8 @@ from hermes.core.config import (
     SignalConfig,
     WireConfig,
 )
-from hermes.core.process import ModuleInfo, ModuleProcess, ModuleState, ProcessManager
+from hermes.core.process import InprocModule, ModuleInfo, ModuleProcess, ModuleState, ProcessManager
+from hermes.core.router import CompiledWire, WireRouter
 from hermes.core.scheduler import Scheduler
 
 __all__ = [
@@ -26,8 +27,12 @@ __all__ = [
     # Process management
     "ProcessManager",
     "ModuleProcess",
+    "InprocModule",
     "ModuleState",
     "ModuleInfo",
+    # Wire routing
+    "WireRouter",
+    "CompiledWire",
     # Scheduling
     "Scheduler",
 ]
