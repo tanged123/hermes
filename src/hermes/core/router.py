@@ -29,9 +29,11 @@ class CompiledWire:
 class WireRouter:
     """Routes signals between modules via shared memory.
 
-    Wires are executed after all modules step, transferring
-    values from source signals to destination signals with
-    optional gain and offset transforms.
+    Wires are executed before modules step each major frame,
+    transferring values from source signals to destination signals
+    with optional gain and offset transforms.  This pre-step
+    routing ensures every module sees the latest wired values
+    when its ``step()`` method is called.
     """
 
     def __init__(self, shm: SharedMemoryManager) -> None:

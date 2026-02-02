@@ -196,9 +196,13 @@ class Scheduler:
                 for entry in self._config.schedule:
                     substeps, module_dt = self._module_substeps[entry.name]
                     inproc = self._pm.get_inproc_module(entry.name)
-                    if inproc is not None:
-                        for _ in range(substeps):
-                            inproc.step(module_dt)
+                    if inproc is None:
+                        raise RuntimeError(
+                            f"Scheduled module '{entry.name}' is not in-process; "
+                            "cannot multi-rate step subprocess modules"
+                        )
+                    for _ in range(substeps):
+                        inproc.step(module_dt)
             else:
                 # No schedule: step all modules at base rate
                 self._pm.step_all()

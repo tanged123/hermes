@@ -263,9 +263,9 @@ class CompiledWire:
 class WireRouter:
     """Routes signals between modules via shared memory.
 
-    Wires are executed after all modules step, transferring
-    values from source signals to destination signals with
-    optional gain and offset transforms.
+    Wires are executed before modules step each major frame,
+    transferring values from source signals to destination
+    signals with optional gain and offset transforms.
     """
 
     def __init__(self, shm: SharedMemoryManager) -> None:
@@ -320,11 +320,11 @@ class WireRouter:
 ```python
 def step(self) -> None:
     """Execute one simulation frame."""
-    # 1. Step all modules
-    self._pm.step_all()
-
-    # 2. Route signals (after all modules have updated)
+    # 1. Route signals (before modules step so they see current wired values)
     self._router.route()
+
+    # 2. Step all modules
+    self._pm.step_all()
 
     # 3. Update time
     self._time_ns += self._dt_ns
@@ -337,7 +337,7 @@ def step(self) -> None:
 - [ ] Offset adds to result
 - [ ] Multiple wires work
 - [ ] Order matches config order
-- [ ] Routing happens after all modules step
+- [ ] Routing happens before module steps each frame
 - [ ] Validation catches missing signals
 
 ---
@@ -392,7 +392,7 @@ class Scheduler:
 ### Acceptance Criteria
 - [ ] Wires configured from HermesConfig
 - [ ] Wire validation during stage
-- [ ] Routing executes after module steps
+- [ ] Routing executes before module steps
 - [ ] Clear errors for invalid wires
 
 ---
@@ -805,7 +805,7 @@ server:
 │  Core Layer          ▼                                                   │
 │  ┌──────────────────────────────────────────────────────────────────┐  │
 │  │                      Wire Router                                  │  │
-│  │  • Executes wires after module steps                             │  │
+│  │  • Executes wires before module steps                            │  │
 │  │  • Applies gain/offset transforms                                │  │
 │  └──────────────────────────┬───────────────────────────────────────┘  │
 │                             │                                            │

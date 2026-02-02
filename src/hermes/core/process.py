@@ -563,7 +563,7 @@ class ProcessManager:
         if self._shm is None:
             raise RuntimeError("ProcessManager not initialized")
 
-        dt = self._config.get_dt()
+        major_dt = self._config.get_major_frame_dt()
 
         # Step subprocess modules via barrier (if any exist)
         if self._modules:
@@ -585,7 +585,7 @@ class ProcessManager:
         # Step inproc modules in execution order
         for name in self._config.get_module_names():
             if name in self._inproc_modules:
-                self._inproc_modules[name].step(dt)
+                self._inproc_modules[name].step(major_dt)
 
     def update_time(self, frame: int, time_ns: int) -> None:
         """Update frame number and simulation time in shared memory.

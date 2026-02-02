@@ -328,6 +328,15 @@ class HermesConfig(BaseModel):
         """Get timestep in seconds."""
         return 1.0 / self.execution.rate_hz
 
+    def get_major_frame_dt(self) -> float:
+        """Get major-frame timestep in seconds.
+
+        Returns the timestep corresponding to the major frame rate (slowest
+        module rate).  Falls back to :meth:`get_dt` when no multi-rate
+        schedule is configured.
+        """
+        return 1.0 / self.execution.get_major_frame_rate_hz()
+
     def get_module_names(self) -> list[str]:
         """Get module names in execution order."""
         if self.execution.schedule:
