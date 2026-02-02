@@ -1,0 +1,33 @@
+# Hermes Configuration - Icarus Rocket Ascent
+#
+# Demonstrates Icarus 6DOF physics integrated as a Hermes module.
+# Signals are discovered at runtime from the Icarus schema (~90 signals).
+
+version: "0.2"
+
+modules:
+  inputs:
+    type: inproc
+    inproc_module: hermes.modules.injection
+    signals:
+      - name: throttle
+        type: f64
+        writable: true
+        published: true
+
+  rocket:
+    type: icarus
+    config: ../references/icarus/config/examples/rocket_ascent.yaml
+
+wiring:
+  - src: inputs.throttle
+    dst: rocket.Rocket.Engine.throttle_cmd
+
+execution:
+  mode: afap
+  rate_hz: 100.0
+  end_time: 10.0
+  schedule: [inputs, rocket]
+
+server:
+  enabled: false
