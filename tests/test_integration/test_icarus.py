@@ -12,7 +12,7 @@ from hermes.backplane.shm import SharedMemoryManager  # noqa: E402
 from hermes.backplane.signals import SignalFlags  # noqa: E402
 from hermes.modules.icarus_module import IcarusModule  # noqa: E402
 
-# Path to the rocket_ascent config bundled with the Icarus reference
+# Path to the rocket_ascent config bundled with the Icarus reference submodule
 ROCKET_ASCENT_CONFIG = (
     Path(__file__).resolve().parents[2]
     / "references"
