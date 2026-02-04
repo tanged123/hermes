@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from hermes.backplane.shm import SharedMemoryManager
     from hermes.backplane.sync import FrameBarrier
     from hermes.core.config import HermesConfig, ModuleConfig
+    from hermes.modules.icarus_module import IcarusModule
 
 log = structlog.get_logger()
 
