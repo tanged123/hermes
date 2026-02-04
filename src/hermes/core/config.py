@@ -19,6 +19,7 @@ class ModuleType(str, Enum):
     PROCESS = "process"  # External executable (C, C++, Rust, etc.)
     INPROC = "inproc"  # In-process (pybind11, future)
     SCRIPT = "script"  # Python script as subprocess
+    ICARUS = "icarus"  # Icarus 6DOF physics engine
 
 
 class ExecutionMode(str, Enum):
@@ -88,6 +89,8 @@ class ModuleConfig(BaseModel):
             raise ValueError("'script' required for script modules")
         if self.type == ModuleType.INPROC and self.inproc_module is None:
             raise ValueError("'inproc_module' required for inproc modules (dotted import path)")
+        if self.type == ModuleType.ICARUS and self.config is None:
+            raise ValueError("'config' required for icarus modules")
         return self
 
 

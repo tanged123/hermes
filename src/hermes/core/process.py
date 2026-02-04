@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from hermes.backplane.shm import SharedMemoryManager
     from hermes.backplane.sync import FrameBarrier
     from hermes.core.config import HermesConfig, ModuleConfig
+    from hermes.modules.icarus_module import IcarusModule
 
 log = structlog.get_logger()
 
@@ -441,9 +442,29 @@ class ProcessManager:
 
         log.info("Initializing process manager")
 
+        # Pre-create icarus modules for signal discovery (before shm allocation)
+        icarus_modules: dict[str, IcarusModule] = {}
+        for module_name, module_config in self._config.modules.items():
+            if module_config.type == ModuleType.ICARUS:
+                from hermes.modules.icarus_module import IcarusModule
+
+                if module_config.config is None:
+                    raise ValueError(f"'config' required for icarus module {module_name}")
+                icarus_mod = IcarusModule(
+                    module_name=module_name,
+                    config_path=module_config.config,
+                    prefix=module_name,
+                )
+                icarus_modules[module_name] = icarus_mod
+
         # Collect all signals from configuration
         signals: list[SignalDescriptor] = []
         for module_name, module_config in self._config.modules.items():
+            # Icarus signals come from the simulator schema, not config
+            if module_name in icarus_modules:
+                signals.extend(icarus_modules[module_name].get_signal_descriptors())
+                continue
+
             for sig_cfg in module_config.signals:
                 # Convert config signal type to backplane SignalType
                 sig_type = SignalType.F64  # Default
@@ -512,7 +533,11 @@ class ProcessManager:
         # Create module instances
         try:
             for name, module_config in self._config.modules.items():
-                if module_config.type == ModuleType.INPROC:
+                if name in icarus_modules:
+                    icarus_mod = icarus_modules[name]
+                    icarus_mod.bind_shm(self._shm)
+                    self._inproc_modules[name] = InprocModule(name=name, instance=icarus_mod)
+                elif module_config.type == ModuleType.INPROC:
                     inproc = _create_inproc_module(name, module_config, self._shm)
                     self._inproc_modules[name] = inproc
                 else:

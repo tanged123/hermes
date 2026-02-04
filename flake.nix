@@ -9,14 +9,14 @@
   };
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     treefmt-nix.url = "github:numtide/treefmt-nix";
 
     # Icarus simulation engine (provides Python bindings)
-    icarus = {
-      url = "github:tanged123/icarus";
-    };
+    icarus.url = "github:tanged123/icarus";
+
+    # Use icarus's nixpkgs so Python versions match for withPackages
+    nixpkgs.follows = "icarus/nixpkgs";
   };
 
   outputs =
@@ -32,9 +32,7 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        # Get Icarus Python bindings
-        # TODO: Change to icarus.packages.${system}.python once Icarus
-        # implements nix_python_bindings.md plan
+        # Icarus Python bindings (nixpkgs follows icarus for Python compat)
         icarusPython = icarus.packages.${system}.python or null;
 
         # Python environment with Hermes dependencies

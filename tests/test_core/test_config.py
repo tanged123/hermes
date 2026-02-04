@@ -26,6 +26,7 @@ class TestModuleType:
         assert ModuleType.PROCESS.value == "process"
         assert ModuleType.INPROC.value == "inproc"
         assert ModuleType.SCRIPT.value == "script"
+        assert ModuleType.ICARUS.value == "icarus"
 
 
 class TestExecutionMode:
@@ -88,6 +89,16 @@ class TestModuleConfig:
         """Script modules should accept script."""
         mod = ModuleConfig(type=ModuleType.SCRIPT, script="./test.py")
         assert mod.script == Path("./test.py")
+
+    def test_icarus_module_requires_config(self) -> None:
+        """Icarus modules must have config path."""
+        with pytest.raises(ValueError, match="config"):
+            ModuleConfig(type=ModuleType.ICARUS)
+
+    def test_icarus_module_with_config(self) -> None:
+        """Icarus modules should accept config."""
+        mod = ModuleConfig(type=ModuleType.ICARUS, config="./rocket.yaml")
+        assert mod.config == Path("./rocket.yaml")
 
 
 class TestWireConfig:

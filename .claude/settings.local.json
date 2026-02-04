@@ -29,7 +29,10 @@
       "Bash(timeout 180 nix develop --command python -m pytest:*)",
       "Bash(bd stats:*)",
       "Bash(./scripts/test.sh:*)",
-      "Bash(./scripts/dev.sh:*)"
+      "Bash(./scripts/dev.sh:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(git push:*)"
     ]
   }
 }
