@@ -2,7 +2,7 @@
 
 [![Hermes CI](https://github.com/tanged123/hermes/actions/workflows/ci.yml/badge.svg)](https://github.com/tanged123/hermes/actions/workflows/ci.yml)
 [![Format Check](https://github.com/tanged123/hermes/actions/workflows/format.yml/badge.svg)](https://github.com/tanged123/hermes/actions/workflows/format.yml)
-[![codecov](https://codecov.io/github/tanged123/hermes/graph/badge.svg)](https://codecov.io/github/tanged123/hermes)
+[![codecov](https://codecov.io/github/tanged123/hermes/graph/badge.svg?token=oO8X7niJW1)](https://codecov.io/github/tanged123/hermes)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://tanged123.github.io/hermes/)
 
 **Multi-Process Simulation Orchestration Platform**
@@ -12,6 +12,7 @@ Hermes coordinates simulation modules running as separate processes, enabling la
 ## Why Hermes?
 
 Modern simulations often need to integrate heterogeneous components:
+
 - Physics engines in C++
 - Control systems in Python
 - Sensor models in Rust
@@ -108,18 +109,23 @@ server:
 ## Core Components
 
 ### Scheduler
+
 Controls simulation execution with support for multiple operating modes, pause/resume, and async callbacks.
 
 ### ProcessManager
+
 Manages module subprocess lifecycles—spawning, staging, stepping, and graceful termination.
 
 ### SharedMemoryManager
+
 Zero-copy signal exchange via POSIX shared memory with header tracking (frame, time, signal count).
 
 ### FrameBarrier
+
 Semaphore-based synchronization ensuring all modules execute in lockstep each frame.
 
 ### SimulationAPI
+
 Python API for runtime inspection and injection into running simulations.
 
 ## Scripting API
@@ -161,6 +167,7 @@ nix fmt                         # Format all files
 ## Project Status
 
 **Phase 1 Complete:**
+
 - POSIX shared memory backplane
 - Semaphore synchronization
 - YAML configuration with Pydantic validation
@@ -171,6 +178,7 @@ nix fmt                         # Format all files
 - 66 unit tests
 
 **Coming in Phase 2:**
+
 - WebSocket server for real-time telemetry
 - Binary telemetry encoding
 - Icarus physics engine integration
