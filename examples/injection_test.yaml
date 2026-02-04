@@ -1,0 +1,70 @@
+# Hermes Configuration - Signal Injection Test
+#
+# Demonstrates signal injection for testing scenarios.
+# Uses writable signals that can be modified via scripting API or WebSocket.
+#
+# Use Case: Hardware-in-the-loop (HIL) testing where external controllers
+# inject commands into the simulation.
+
+version: "0.2"
+
+modules:
+  # Injection module: provides writable signals for external input
+  inputs:
+    type: inproc
+    inproc_module: hermes.modules.injection
+    signals:
+      - name: throttle_cmd
+        type: f64
+        unit: "%"
+        writable: true
+        published: true
+
+      - name: pitch_cmd
+        type: f64
+        unit: "deg"
+        writable: true
+        published: true
+
+      - name: yaw_cmd
+        type: f64
+        unit: "deg"
+        writable: true
+        published: true
+
+  # Mock physics module: simple integrator for testing
+  physics:
+    type: inproc
+    inproc_module: hermes.modules.mock_physics
+    signals:
+      - name: throttle
+        type: f64
+        unit: "%"
+        writable: true
+        published: true
+
+      - name: velocity
+        type: f64
+        unit: "m/s"
+        published: true
+
+      - name: position
+        type: f64
+        unit: "m"
+        published: true
+
+# Wire injection signals to physics inputs
+wiring:
+  - src: inputs.throttle_cmd
+    dst: physics.throttle
+
+execution:
+  mode: single_frame  # Manual stepping for testing
+  rate_hz: 100.0
+  schedule: [inputs, physics]
+
+server:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8765
+  telemetry_hz: 60.0

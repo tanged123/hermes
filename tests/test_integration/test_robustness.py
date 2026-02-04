@@ -19,6 +19,7 @@ from hermes.backplane.signals import SignalDescriptor, SignalType
 from hermes.backplane.sync import FrameBarrier
 from hermes.core.config import ExecutionConfig, ExecutionMode
 from hermes.core.scheduler import Scheduler
+from hermes.exceptions import SemaphoreError, SharedMemoryError, SignalError
 
 
 class TestSchedulerDeterminismExtended:
@@ -313,12 +314,12 @@ class TestFrameBarrierRobustness:
 
     def test_invalid_count_zero(self, barrier_name: str) -> None:
         """Should reject count of zero."""
-        with pytest.raises(ValueError, match="at least 1"):
+        with pytest.raises(SemaphoreError, match="at least 1"):
             FrameBarrier(barrier_name, 0)
 
     def test_invalid_count_negative(self, barrier_name: str) -> None:
         """Should reject negative count."""
-        with pytest.raises(ValueError, match="at least 1"):
+        with pytest.raises(SemaphoreError, match="at least 1"):
             FrameBarrier(barrier_name, -1)
 
     def test_destroy_idempotent(self, barrier_name: str) -> None:
@@ -438,38 +439,38 @@ class TestErrorPropagation:
         """All SHM operations should fail cleanly when not attached."""
         shm = SharedMemoryManager("/test_not_attached")
 
-        with pytest.raises(RuntimeError, match="Not attached"):
+        with pytest.raises(SharedMemoryError, match="Not attached"):
             shm.get_signal("test")
 
-        with pytest.raises(RuntimeError, match="Not attached"):
+        with pytest.raises(SharedMemoryError, match="Not attached"):
             shm.set_signal("test", 1.0)
 
-        with pytest.raises(RuntimeError, match="Not attached"):
+        with pytest.raises(SharedMemoryError, match="Not attached"):
             shm.get_frame()
 
-        with pytest.raises(RuntimeError, match="Not attached"):
+        with pytest.raises(SharedMemoryError, match="Not attached"):
             shm.set_frame(1)
 
-        with pytest.raises(RuntimeError, match="Not attached"):
+        with pytest.raises(SharedMemoryError, match="Not attached"):
             shm.get_time_ns()
 
-        with pytest.raises(RuntimeError, match="Not attached"):
+        with pytest.raises(SharedMemoryError, match="Not attached"):
             shm.set_time_ns(1)
 
     def test_barrier_operations_when_not_created(self) -> None:
         """All barrier operations should fail cleanly when not created."""
         barrier = FrameBarrier("/test_not_created", 1)
 
-        with pytest.raises(RuntimeError, match="not created"):
+        with pytest.raises(SemaphoreError, match="not created"):
             barrier.signal_step()
 
-        with pytest.raises(RuntimeError, match="not created"):
+        with pytest.raises(SemaphoreError, match="not created"):
             barrier.wait_step()
 
-        with pytest.raises(RuntimeError, match="not created"):
+        with pytest.raises(SemaphoreError, match="not created"):
             barrier.signal_done()
 
-        with pytest.raises(RuntimeError, match="not created"):
+        with pytest.raises(SemaphoreError, match="not created"):
             barrier.wait_all_done()
 
     def test_scheduler_step_invalid_count(self) -> None:
@@ -484,8 +485,8 @@ class TestErrorPropagation:
         with pytest.raises(ValueError, match="positive"):
             scheduler.step(-5)
 
-    def test_unknown_signal_raises_keyerror(self) -> None:
-        """Accessing unknown signal should raise KeyError."""
+    def test_unknown_signal_raises_signal_error(self) -> None:
+        """Accessing unknown signal should raise SignalError."""
         shm_name = f"/hermes_keyerror_test_{uuid.uuid4().hex[:8]}"
         signals = [SignalDescriptor(name="exists", type=SignalType.F64)]
 
@@ -497,11 +498,11 @@ class TestErrorPropagation:
             shm.set_signal("exists", 1.0)
             assert shm.get_signal("exists") == 1.0
 
-            # Unknown signal raises KeyError
-            with pytest.raises(KeyError, match="not_exists"):
+            # Unknown signal raises SignalError
+            with pytest.raises(SignalError, match="not_exists"):
                 shm.get_signal("not_exists")
 
-            with pytest.raises(KeyError, match="not_exists"):
+            with pytest.raises(SignalError, match="not_exists"):
                 shm.set_signal("not_exists", 1.0)
 
         finally:

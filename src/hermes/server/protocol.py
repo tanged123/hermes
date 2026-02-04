@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from hermes.exceptions import ProtocolError
+
 
 class ServerMessageType(str, Enum):
     """Types of messages sent from server to client."""
@@ -95,35 +97,35 @@ class Command:
             Parsed command
 
         Raises:
-            ValueError: If JSON is invalid or missing required fields
+            ProtocolError: If JSON is invalid or missing required fields
         """
         try:
             parsed = json.loads(data)
             if not isinstance(parsed, dict):
-                raise ValueError("Command must be a JSON object")
+                raise ProtocolError("Command must be a JSON object")
 
             action = parsed.get("action")
             if action is None:
-                raise ValueError("Command missing 'action' field")
+                raise ProtocolError("Command missing 'action' field")
 
             params = parsed.get("params", {})
             if not isinstance(params, dict):
-                raise ValueError("Command 'params' must be an object")
+                raise ProtocolError("Command 'params' must be an object")
 
             return cls(action=str(action), params=params)
         except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON: {e}") from e
+            raise ProtocolError(f"Invalid JSON: {e}") from e
 
     def validate(self) -> None:
         """Validate command action and params.
 
         Raises:
-            ValueError: If action is unknown or params are invalid
+            ProtocolError: If action is unknown or params are invalid
         """
         try:
             CommandAction(self.action)
         except ValueError:
-            raise ValueError(f"Unknown action: {self.action}") from None
+            raise ProtocolError(f"Unknown action: {self.action}") from None
 
         # Validate action-specific params
         match self.action:
@@ -131,20 +133,20 @@ class Command:
                 if "count" in self.params:
                     count = self.params["count"]
                     if not isinstance(count, int) or count < 1:
-                        raise ValueError("step 'count' must be a positive integer")
+                        raise ProtocolError("step 'count' must be a positive integer")
 
             case "set":
                 if "signal" not in self.params:
-                    raise ValueError("set command requires 'signal' param")
+                    raise ProtocolError("set command requires 'signal' param")
                 if "value" not in self.params:
-                    raise ValueError("set command requires 'value' param")
+                    raise ProtocolError("set command requires 'value' param")
 
             case "subscribe":
                 if "signals" not in self.params:
-                    raise ValueError("subscribe command requires 'signals' param")
+                    raise ProtocolError("subscribe command requires 'signals' param")
                 signals = self.params["signals"]
                 if not isinstance(signals, list):
-                    raise ValueError("subscribe 'signals' must be a list")
+                    raise ProtocolError("subscribe 'signals' must be a list")
 
 
 # Factory functions for creating server messages

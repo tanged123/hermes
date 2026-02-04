@@ -9,6 +9,7 @@ import pytest
 from hermes.core.config import HermesConfig
 from hermes.core.process import ProcessManager
 from hermes.core.scheduler import Scheduler
+from hermes.exceptions import WireConfigError
 
 
 def _write_config(tmp_path: Path, yaml_text: str) -> Path:
@@ -389,7 +390,7 @@ execution:
   rate_hz: 100.0
 """,
         )
-        with pytest.raises(ValueError, match="Wire source module not found"):
+        with pytest.raises(WireConfigError, match="Wire source module not found"):
             HermesConfig.from_yaml(config_path)
 
     def test_invalid_wire_signal_raises(self, tmp_path: Path) -> None:

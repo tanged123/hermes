@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+from hermes.exceptions import ProtocolError
 from hermes.server.protocol import (
     Command,
     CommandAction,
@@ -147,23 +148,23 @@ class TestCommand:
         assert cmd.params == {"count": 5}
 
     def test_from_json_invalid_json_raises(self) -> None:
-        """Should raise ValueError for invalid JSON."""
-        with pytest.raises(ValueError, match="Invalid JSON"):
+        """Should raise ProtocolError for invalid JSON."""
+        with pytest.raises(ProtocolError, match="Invalid JSON"):
             Command.from_json("not valid json")
 
     def test_from_json_not_object_raises(self) -> None:
-        """Should raise ValueError when JSON is not an object."""
-        with pytest.raises(ValueError, match="must be a JSON object"):
+        """Should raise ProtocolError when JSON is not an object."""
+        with pytest.raises(ProtocolError, match="must be a JSON object"):
             Command.from_json('"just a string"')
 
     def test_from_json_missing_action_raises(self) -> None:
-        """Should raise ValueError when action is missing."""
-        with pytest.raises(ValueError, match="missing 'action' field"):
+        """Should raise ProtocolError when action is missing."""
+        with pytest.raises(ProtocolError, match="missing 'action' field"):
             Command.from_json('{"params": {}}')
 
     def test_from_json_invalid_params_type_raises(self) -> None:
-        """Should raise ValueError when params is not an object."""
-        with pytest.raises(ValueError, match="'params' must be an object"):
+        """Should raise ProtocolError when params is not an object."""
+        with pytest.raises(ProtocolError, match="'params' must be an object"):
             Command.from_json('{"action": "pause", "params": "invalid"}')
 
     def test_validate_known_action(self) -> None:
@@ -175,23 +176,23 @@ class TestCommand:
                 cmd.validate()  # Should not raise
 
     def test_validate_unknown_action_raises(self) -> None:
-        """Should raise ValueError for unknown action."""
+        """Should raise ProtocolError for unknown action."""
         cmd = Command(action="unknown")
-        with pytest.raises(ValueError, match="Unknown action: unknown"):
+        with pytest.raises(ProtocolError, match="Unknown action: unknown"):
             cmd.validate()
 
     def test_validate_step_invalid_count(self) -> None:
-        """Should raise ValueError for invalid step count."""
+        """Should raise ProtocolError for invalid step count."""
         cmd = Command(action="step", params={"count": 0})
-        with pytest.raises(ValueError, match="positive integer"):
+        with pytest.raises(ProtocolError, match="positive integer"):
             cmd.validate()
 
         cmd = Command(action="step", params={"count": -1})
-        with pytest.raises(ValueError, match="positive integer"):
+        with pytest.raises(ProtocolError, match="positive integer"):
             cmd.validate()
 
         cmd = Command(action="step", params={"count": "ten"})
-        with pytest.raises(ValueError, match="positive integer"):
+        with pytest.raises(ProtocolError, match="positive integer"):
             cmd.validate()
 
     def test_validate_step_valid_count(self) -> None:
@@ -203,15 +204,15 @@ class TestCommand:
         cmd.validate()  # Should not raise
 
     def test_validate_set_missing_signal(self) -> None:
-        """Should raise ValueError for set without signal."""
+        """Should raise ProtocolError for set without signal."""
         cmd = Command(action="set", params={"value": 1.0})
-        with pytest.raises(ValueError, match="requires 'signal' param"):
+        with pytest.raises(ProtocolError, match="requires 'signal' param"):
             cmd.validate()
 
     def test_validate_set_missing_value(self) -> None:
-        """Should raise ValueError for set without value."""
+        """Should raise ProtocolError for set without value."""
         cmd = Command(action="set", params={"signal": "test.x"})
-        with pytest.raises(ValueError, match="requires 'value' param"):
+        with pytest.raises(ProtocolError, match="requires 'value' param"):
             cmd.validate()
 
     def test_validate_set_valid(self) -> None:
@@ -220,15 +221,15 @@ class TestCommand:
         cmd.validate()  # Should not raise
 
     def test_validate_subscribe_missing_signals(self) -> None:
-        """Should raise ValueError for subscribe without signals."""
+        """Should raise ProtocolError for subscribe without signals."""
         cmd = Command(action="subscribe", params={})
-        with pytest.raises(ValueError, match="requires 'signals' param"):
+        with pytest.raises(ProtocolError, match="requires 'signals' param"):
             cmd.validate()
 
     def test_validate_subscribe_invalid_signals_type(self) -> None:
-        """Should raise ValueError when signals is not a list."""
+        """Should raise ProtocolError when signals is not a list."""
         cmd = Command(action="subscribe", params={"signals": "test.*"})
-        with pytest.raises(ValueError, match="'signals' must be a list"):
+        with pytest.raises(ProtocolError, match="'signals' must be a list"):
             cmd.validate()
 
     def test_validate_subscribe_valid(self) -> None:

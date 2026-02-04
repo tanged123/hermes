@@ -38,6 +38,8 @@ from typing import TYPE_CHECKING
 
 import posix_ipc
 
+from hermes.exceptions import SharedMemoryError, SignalError
+
 if TYPE_CHECKING:
     from hermes.backplane.signals import SignalDescriptor
 
@@ -96,11 +98,11 @@ class SharedMemoryManager:
             signals: List of signal descriptors to allocate space for
 
         Raises:
-            RuntimeError: If already attached
+            SharedMemoryError: If already attached
             posix_ipc.ExistentialError: If segment already exists
         """
         if self._mmap is not None:
-            raise RuntimeError("Already attached to shared memory")
+            raise SharedMemoryError("Already attached to shared memory")
 
         # Calculate sizes
         self._signal_count = len(signals)
@@ -170,11 +172,11 @@ class SharedMemoryManager:
         """Attach to existing shared memory segment.
 
         Raises:
-            RuntimeError: If already attached
+            SharedMemoryError: If already attached
             posix_ipc.ExistentialError: If segment doesn't exist
         """
         if self._mmap is not None:
-            raise RuntimeError("Already attached to shared memory")
+            raise SharedMemoryError("Already attached to shared memory")
 
         # Open existing segment
         self._shm = posix_ipc.SharedMemory(self._name, posix_ipc.O_RDWR)
@@ -186,9 +188,9 @@ class SharedMemoryManager:
         magic, version, _, _, signal_count = struct.unpack(self.HEADER_FORMAT, header_data)
 
         if magic != self.MAGIC:
-            raise ValueError(f"Invalid shared memory magic: {magic:#x}")
+            raise SharedMemoryError(f"Invalid shared memory magic: {magic:#x}")
         if version != self.VERSION:
-            raise ValueError(f"Unsupported version: {version}")
+            raise SharedMemoryError(f"Unsupported version: {version}")
 
         self._signal_count = signal_count
 
@@ -258,13 +260,13 @@ class SharedMemoryManager:
             Signal value as float
 
         Raises:
-            RuntimeError: If not attached
-            KeyError: If signal not found
+            SharedMemoryError: If not attached
+            SignalError: If signal not found
         """
         if self._mmap is None:
-            raise RuntimeError("Not attached to shared memory")
+            raise SharedMemoryError("Not attached to shared memory")
         if name not in self._signal_offsets:
-            raise KeyError(f"Signal not found: {name}")
+            raise SignalError(f"Signal not found: {name}")
 
         offset = self._signal_offsets[name]
         self._mmap.seek(offset)
@@ -279,13 +281,13 @@ class SharedMemoryManager:
             value: Value to write
 
         Raises:
-            RuntimeError: If not attached
-            KeyError: If signal not found
+            SharedMemoryError: If not attached
+            SignalError: If signal not found
         """
         if self._mmap is None:
-            raise RuntimeError("Not attached to shared memory")
+            raise SharedMemoryError("Not attached to shared memory")
         if name not in self._signal_offsets:
-            raise KeyError(f"Signal not found: {name}")
+            raise SignalError(f"Signal not found: {name}")
 
         offset = self._signal_offsets[name]
         self._mmap.seek(offset)
@@ -297,7 +299,7 @@ class SharedMemoryManager:
     def get_frame(self) -> int:
         """Get current frame number from header."""
         if self._mmap is None:
-            raise RuntimeError("Not attached to shared memory")
+            raise SharedMemoryError("Not attached to shared memory")
         self._mmap.seek(8)  # Offset of frame field
         (frame,) = struct.unpack("<Q", self._mmap.read(8))
         return int(frame)
@@ -305,7 +307,7 @@ class SharedMemoryManager:
     def set_frame(self, frame: int) -> None:
         """Set frame number in header."""
         if self._mmap is None:
-            raise RuntimeError("Not attached to shared memory")
+            raise SharedMemoryError("Not attached to shared memory")
         self._mmap.seek(8)
         self._mmap.write(struct.pack("<Q", frame))
 
@@ -315,7 +317,7 @@ class SharedMemoryManager:
         This is the authoritative time value for deterministic simulations.
         """
         if self._mmap is None:
-            raise RuntimeError("Not attached to shared memory")
+            raise SharedMemoryError("Not attached to shared memory")
         self._mmap.seek(16)  # Offset of time_ns field
         (time_ns,) = struct.unpack("<Q", self._mmap.read(8))
         return int(time_ns)
@@ -323,7 +325,7 @@ class SharedMemoryManager:
     def set_time_ns(self, time_ns: int) -> None:
         """Set simulation time in nanoseconds in header."""
         if self._mmap is None:
-            raise RuntimeError("Not attached to shared memory")
+            raise SharedMemoryError("Not attached to shared memory")
         self._mmap.seek(16)
         self._mmap.write(struct.pack("<Q", time_ns))
 
