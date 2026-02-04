@@ -8,6 +8,7 @@ import uuid
 import pytest
 
 from hermes.backplane.sync import FrameBarrier
+from hermes.exceptions import SemaphoreError
 
 
 @pytest.fixture
@@ -139,7 +140,7 @@ class TestFrameBarrierErrors:
         barrier = FrameBarrier(barrier_name, 1)
         try:
             barrier.create()
-            with pytest.raises(RuntimeError, match="already created"):
+            with pytest.raises(SemaphoreError, match="already created"):
                 barrier.create()
         finally:
             barrier.destroy()
@@ -152,7 +153,7 @@ class TestFrameBarrierErrors:
 
             client = FrameBarrier(barrier_name, 1)
             client.attach()
-            with pytest.raises(RuntimeError, match="Already attached"):
+            with pytest.raises(SemaphoreError, match="Already attached"):
                 client.attach()
             client.close()
         finally:
@@ -161,25 +162,25 @@ class TestFrameBarrierErrors:
     def test_signal_step_not_created_raises(self, barrier_name: str) -> None:
         """Should raise if signaling step without creating."""
         barrier = FrameBarrier(barrier_name, 1)
-        with pytest.raises(RuntimeError, match="not created"):
+        with pytest.raises(SemaphoreError, match="not created"):
             barrier.signal_step()
 
     def test_wait_step_not_created_raises(self, barrier_name: str) -> None:
         """Should raise if waiting step without creating."""
         barrier = FrameBarrier(barrier_name, 1)
-        with pytest.raises(RuntimeError, match="not created"):
+        with pytest.raises(SemaphoreError, match="not created"):
             barrier.wait_step()
 
     def test_signal_done_not_created_raises(self, barrier_name: str) -> None:
         """Should raise if signaling done without creating."""
         barrier = FrameBarrier(barrier_name, 1)
-        with pytest.raises(RuntimeError, match="not created"):
+        with pytest.raises(SemaphoreError, match="not created"):
             barrier.signal_done()
 
     def test_wait_all_done_not_created_raises(self, barrier_name: str) -> None:
         """Should raise if waiting done without creating."""
         barrier = FrameBarrier(barrier_name, 1)
-        with pytest.raises(RuntimeError, match="not created"):
+        with pytest.raises(SemaphoreError, match="not created"):
             barrier.wait_all_done()
 
 

@@ -31,6 +31,7 @@ import structlog
 import websockets
 from websockets.asyncio.server import Server, ServerConnection, serve
 
+from hermes.exceptions import ProtocolError, SignalError
 from hermes.server.protocol import (
     Command,
     EventType,
@@ -323,7 +324,7 @@ class HermesServer:
             # Validate command
             try:
                 cmd.validate()
-            except ValueError as e:
+            except ProtocolError as e:
                 await client.ws.send(make_error(str(e)).to_json())
                 return
 
@@ -337,7 +338,7 @@ class HermesServer:
             if response is not None:
                 await client.ws.send(response.to_json())
 
-        except ValueError as e:
+        except ProtocolError as e:
             log.warning("Invalid message", remote=client.remote, error=str(e))
             await client.ws.send(make_error(str(e)).to_json())
 
@@ -405,7 +406,7 @@ class HermesServer:
         try:
             self._shm.set_signal(signal, float(value))
             return make_ack("set", {"signal": signal, "value": value})
-        except KeyError:
+        except SignalError:
             return make_error(f"Unknown signal: {signal}")
         except (TypeError, ValueError) as e:
             return make_error(f"Invalid value: {e}")

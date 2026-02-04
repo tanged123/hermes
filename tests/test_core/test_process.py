@@ -12,6 +12,7 @@ import pytest
 
 from hermes.core.config import HermesConfig, ModuleConfig, ModuleType, SignalConfig
 from hermes.core.process import ModuleInfo, ModuleProcess, ModuleState, ProcessManager
+from hermes.exceptions import ModuleConfigError, ModuleError, ProcessError
 
 
 class TestModuleState:
@@ -101,7 +102,7 @@ class TestModuleProcess:
         # Manually set process to simulate already loaded
         module._process = MagicMock()
 
-        with pytest.raises(RuntimeError, match="already loaded"):
+        with pytest.raises(ModuleError, match="already loaded"):
             module.load()
 
     def test_stage_from_init(self, script_module_config: ModuleConfig) -> None:
@@ -128,7 +129,7 @@ class TestModuleProcess:
         )
         module._state = ModuleState.STAGED
 
-        with pytest.raises(RuntimeError, match="Cannot stage"):
+        with pytest.raises(ModuleError, match="Cannot stage"):
             module.stage()
 
     def test_terminate_no_process(self, script_module_config: ModuleConfig) -> None:
@@ -245,25 +246,25 @@ class TestModuleProcess:
         assert module.is_alive is False
 
     def test_load_script_file_not_found(self, script_module_config: ModuleConfig) -> None:
-        """Should raise FileNotFoundError for missing script."""
+        """Should raise ModuleError for missing script."""
         module = ModuleProcess(
             name="test",
             config=script_module_config,
             shm_name="/hermes_test",
             barrier_name="/hermes_barrier_test",
         )
-        with pytest.raises(FileNotFoundError, match="Script not found"):
+        with pytest.raises(ModuleError, match="Script not found"):
             module.load()
 
     def test_load_executable_file_not_found(self, process_module_config: ModuleConfig) -> None:
-        """Should raise FileNotFoundError for missing executable."""
+        """Should raise ModuleError for missing executable."""
         module = ModuleProcess(
             name="test",
             config=process_module_config,
             shm_name="/hermes_test",
             barrier_name="/hermes_barrier_test",
         )
-        with pytest.raises(FileNotFoundError, match="Executable not found"):
+        with pytest.raises(ModuleError, match="Executable not found"):
             module.load()
 
     def test_load_script_with_actual_file(self) -> None:
@@ -296,7 +297,7 @@ class TestModuleProcess:
             Path(script_path).unlink()
 
     def test_load_unsupported_module_type(self) -> None:
-        """Should raise ValueError for unsupported module type as subprocess."""
+        """Should raise ModuleConfigError for unsupported module type as subprocess."""
         config = ModuleConfig(
             type=ModuleType.INPROC,
             inproc_module="hermes.modules.injection",
@@ -307,11 +308,11 @@ class TestModuleProcess:
             shm_name="/hermes_test",
             barrier_name="/hermes_barrier_test",
         )
-        with pytest.raises(ValueError, match="Unsupported module type"):
+        with pytest.raises(ModuleConfigError, match="Unsupported module type"):
             module.load()
 
     def test_start_script_no_script_raises(self) -> None:
-        """Should raise ValueError if script config has no script path."""
+        """Should raise ModuleConfigError if script config has no script path."""
         # Use a mock to simulate missing script
         config = ModuleConfig(type=ModuleType.SCRIPT, script="./test.py")
         module = ModuleProcess(
@@ -326,11 +327,11 @@ class TestModuleProcess:
         mock_config.config = None
         module._config = mock_config
 
-        with pytest.raises(ValueError, match="No script"):
+        with pytest.raises(ModuleConfigError, match="No script"):
             module._start_script()
 
     def test_start_executable_no_executable_raises(self) -> None:
-        """Should raise ValueError if process config has no executable."""
+        """Should raise ModuleConfigError if process config has no executable."""
         config = ModuleConfig(type=ModuleType.PROCESS, executable="./test")
         module = ModuleProcess(
             name="test",
@@ -344,7 +345,7 @@ class TestModuleProcess:
         mock_config.config = None
         module._config = mock_config
 
-        with pytest.raises(ValueError, match="No executable"):
+        with pytest.raises(ModuleConfigError, match="No executable"):
             module._start_executable()
 
 
@@ -407,13 +408,13 @@ class TestProcessManager:
     def test_step_all_without_init_raises(self, minimal_config: HermesConfig) -> None:
         """Should raise if stepping before initialization."""
         pm = ProcessManager(minimal_config)
-        with pytest.raises(RuntimeError, match="not initialized"):
+        with pytest.raises(ProcessError, match="not initialized"):
             pm.step_all()
 
     def test_update_time_without_init_raises(self, minimal_config: HermesConfig) -> None:
         """Should raise if updating time before initialization."""
         pm = ProcessManager(minimal_config)
-        with pytest.raises(RuntimeError, match="not initialized"):
+        with pytest.raises(ProcessError, match="not initialized"):
             pm.update_time(0, 0)
 
     def test_context_manager(self, minimal_config: HermesConfig) -> None:

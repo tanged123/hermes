@@ -12,6 +12,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from hermes.exceptions import ModuleConfigError, WireConfigError
+
 
 class ModuleType(str, Enum):
     """Module execution types."""
@@ -84,13 +86,15 @@ class ModuleConfig(BaseModel):
     def _validate_type_fields(self) -> ModuleConfig:
         """Ensure required fields are present for module type."""
         if self.type == ModuleType.PROCESS and self.executable is None:
-            raise ValueError("'executable' required for process modules")
+            raise ModuleConfigError("'executable' required for process modules")
         if self.type == ModuleType.SCRIPT and self.script is None:
-            raise ValueError("'script' required for script modules")
+            raise ModuleConfigError("'script' required for script modules")
         if self.type == ModuleType.INPROC and self.inproc_module is None:
-            raise ValueError("'inproc_module' required for inproc modules (dotted import path)")
+            raise ModuleConfigError(
+                "'inproc_module' required for inproc modules (dotted import path)"
+            )
         if self.type == ModuleType.ICARUS and self.config is None:
-            raise ValueError("'config' required for icarus modules")
+            raise ModuleConfigError("'config' required for icarus modules")
         return self
 
 
@@ -113,7 +117,7 @@ class WireConfig(BaseModel):
     @classmethod
     def _validate_qualified_name(cls, v: str) -> str:
         if "." not in v:
-            raise ValueError(f"Expected 'module.signal' format: {v}")
+            raise WireConfigError(f"Expected 'module.signal' format: {v}")
         return v
 
 
@@ -282,14 +286,14 @@ class HermesConfig(BaseModel):
             src_module = wire.src.split(".", 1)[0]
             dst_module = wire.dst.split(".", 1)[0]
             if src_module not in module_names:
-                raise ValueError(f"Wire source module not found: {src_module}")
+                raise WireConfigError(f"Wire source module not found: {src_module}")
             if dst_module not in module_names:
-                raise ValueError(f"Wire destination module not found: {dst_module}")
+                raise WireConfigError(f"Wire destination module not found: {dst_module}")
 
         # Validate schedule references
         for entry in self.execution.schedule:
             if entry.name not in module_names:
-                raise ValueError(f"Schedule references unknown module: {entry.name}")
+                raise ModuleConfigError(f"Schedule references unknown module: {entry.name}")
 
         return self
 

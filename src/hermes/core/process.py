@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import structlog
 
+from hermes.exceptions import ModuleConfigError, ModuleError, ProcessError
+
 if TYPE_CHECKING:
     from hermes.backplane.shm import SharedMemoryManager
     from hermes.backplane.sync import FrameBarrier
@@ -123,31 +125,32 @@ class ModuleProcess:
         """Start the module process.
 
         Raises:
-            RuntimeError: If process already started
-            FileNotFoundError: If executable not found
+            ModuleError: If process already started
+            ModuleError: If executable not found
+            ModuleConfigError: If module type is not supported
         """
         from hermes.core.config import ModuleType
 
         if self._process is not None:
-            raise RuntimeError(f"Module {self._name} already loaded")
+            raise ModuleError(self._name, "already loaded")
 
         if self._config.type == ModuleType.PROCESS:
             self._start_executable()
         elif self._config.type == ModuleType.SCRIPT:
             self._start_script()
         else:
-            raise ValueError(f"Unsupported module type: {self._config.type}")
+            raise ModuleConfigError(f"Unsupported module type: {self._config.type}")
 
         log.info("Module loaded", module=self._name, pid=self.pid)
 
     def _start_executable(self) -> None:
         """Start an external executable module."""
         if self._config.executable is None:
-            raise ValueError(f"No executable for module {self._name}")
+            raise ModuleConfigError(f"No executable for module {self._name}")
 
         exe_path = Path(self._config.executable)
         if not exe_path.exists():
-            raise FileNotFoundError(f"Executable not found: {exe_path}")
+            raise ModuleError(self._name, f"Executable not found: {exe_path}")
 
         args = [str(exe_path), self._shm_name]
         if self._config.config:
@@ -169,11 +172,11 @@ class ModuleProcess:
     def _start_script(self) -> None:
         """Start a Python script module."""
         if self._config.script is None:
-            raise ValueError(f"No script for module {self._name}")
+            raise ModuleConfigError(f"No script for module {self._name}")
 
         script_path = Path(self._config.script)
         if not script_path.exists():
-            raise FileNotFoundError(f"Script not found: {script_path}")
+            raise ModuleError(self._name, f"Script not found: {script_path}")
 
         args = [sys.executable, str(script_path), self._shm_name]
         if self._config.config:
@@ -199,7 +202,7 @@ class ModuleProcess:
         apply initial conditions.
         """
         if self._state != ModuleState.INIT:
-            raise RuntimeError(f"Cannot stage module in state {self._state}")
+            raise ModuleError(self._name, f"Cannot stage module in state {self._state}")
 
         # For now, staging is handled via environment/args at startup
         # Future: send STAGE command via named pipe
@@ -288,7 +291,7 @@ class InprocModule:
     def stage(self) -> None:
         """Stage the in-process module."""
         if self._state != ModuleState.INIT:
-            raise RuntimeError(f"Cannot stage module in state {self._state}")
+            raise ModuleError(self._name, f"Cannot stage module in state {self._state}")
         self._instance.stage()
         self._state = ModuleState.STAGED
         log.debug("Inproc module staged", module=self._name)
@@ -333,7 +336,7 @@ def _create_inproc_module(
         InprocModule wrapping the instantiated Python object
     """
     if config.inproc_module is None:
-        raise ValueError(f"'inproc_module' required for inproc module {name}")
+        raise ModuleConfigError(f"'inproc_module' required for inproc module {name}")
 
     module_path = config.inproc_module
     log.info("Loading inproc module", name=name, script=module_path)
@@ -375,7 +378,7 @@ def _create_inproc_module(
             break
 
     if instance is None:
-        raise ValueError(
+        raise ModuleConfigError(
             f"No valid module class found in {module_path}. "
             "Expected a class with stage(), step(dt), reset() methods."
         )
@@ -449,7 +452,7 @@ class ProcessManager:
                 from hermes.modules.icarus_module import IcarusModule
 
                 if module_config.config is None:
-                    raise ValueError(f"'config' required for icarus module {module_name}")
+                    raise ModuleConfigError(f"'config' required for icarus module {module_name}")
                 icarus_mod = IcarusModule(
                     module_name=module_name,
                     config_path=module_config.config,
@@ -506,7 +509,7 @@ class ProcessManager:
         if module_count < 1:
             self._shm.destroy()
             self._shm = None
-            raise ValueError("Cannot initialize ProcessManager with zero modules")
+            raise ProcessError("Cannot initialize ProcessManager with zero modules")
 
         subprocess_count = sum(
             1
@@ -582,18 +585,18 @@ class ProcessManager:
             timeout: Maximum seconds to wait for subprocess modules
 
         Raises:
-            RuntimeError: If not initialized
+            ProcessError: If not initialized
             TimeoutError: If subprocess modules don't complete within timeout
         """
         if self._shm is None:
-            raise RuntimeError("ProcessManager not initialized")
+            raise ProcessError("ProcessManager not initialized")
 
         major_dt = self._config.get_major_frame_dt()
 
         # Step subprocess modules via barrier (if any exist)
         if self._modules:
             if self._barrier is None:
-                raise RuntimeError("ProcessManager barrier not initialized")
+                raise ProcessError("ProcessManager barrier not initialized")
 
             for module in self._modules.values():
                 module.mark_running()
@@ -620,7 +623,7 @@ class ProcessManager:
             time_ns: Current simulation time in nanoseconds
         """
         if self._shm is None:
-            raise RuntimeError("ProcessManager not initialized")
+            raise ProcessError("ProcessManager not initialized")
 
         self._shm.set_frame(frame)
         self._shm.set_time_ns(time_ns)

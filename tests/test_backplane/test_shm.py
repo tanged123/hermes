@@ -9,6 +9,7 @@ import pytest
 
 from hermes.backplane.shm import SharedMemoryManager
 from hermes.backplane.signals import SignalDescriptor, SignalFlags, SignalType
+from hermes.exceptions import SharedMemoryError, SignalError
 
 
 @pytest.fixture
@@ -93,15 +94,15 @@ class TestSharedMemoryManager:
     def test_invalid_signal_raises(
         self, shm_name: str, test_signals: list[SignalDescriptor]
     ) -> None:
-        """Should raise KeyError for nonexistent signal."""
+        """Should raise SignalError for nonexistent signal."""
         shm = SharedMemoryManager(shm_name)
         try:
             shm.create(test_signals)
 
-            with pytest.raises(KeyError):
+            with pytest.raises(SignalError):
                 shm.get_signal("nonexistent.signal")
 
-            with pytest.raises(KeyError):
+            with pytest.raises(SignalError):
                 shm.set_signal("nonexistent.signal", 1.0)
         finally:
             shm.destroy()
@@ -219,7 +220,7 @@ class TestSharedMemoryManager:
         shm = SharedMemoryManager(shm_name)
         try:
             shm.create(test_signals)
-            with pytest.raises(RuntimeError, match="Already attached"):
+            with pytest.raises(SharedMemoryError, match="Already attached"):
                 shm.create(test_signals)
         finally:
             shm.destroy()
@@ -234,7 +235,7 @@ class TestSharedMemoryManager:
 
             client = SharedMemoryManager(shm_name)
             client.attach()
-            with pytest.raises(RuntimeError, match="Already attached"):
+            with pytest.raises(SharedMemoryError, match="Already attached"):
                 client.attach()
             client.detach()
         finally:
@@ -243,37 +244,37 @@ class TestSharedMemoryManager:
     def test_get_signal_not_attached_raises(self, shm_name: str) -> None:
         """Should raise if reading signal when not attached."""
         shm = SharedMemoryManager(shm_name)
-        with pytest.raises(RuntimeError, match="Not attached"):
+        with pytest.raises(SharedMemoryError, match="Not attached"):
             shm.get_signal("test")
 
     def test_set_signal_not_attached_raises(self, shm_name: str) -> None:
         """Should raise if writing signal when not attached."""
         shm = SharedMemoryManager(shm_name)
-        with pytest.raises(RuntimeError, match="Not attached"):
+        with pytest.raises(SharedMemoryError, match="Not attached"):
             shm.set_signal("test", 1.0)
 
     def test_get_frame_not_attached_raises(self, shm_name: str) -> None:
         """Should raise if reading frame when not attached."""
         shm = SharedMemoryManager(shm_name)
-        with pytest.raises(RuntimeError, match="Not attached"):
+        with pytest.raises(SharedMemoryError, match="Not attached"):
             shm.get_frame()
 
     def test_set_frame_not_attached_raises(self, shm_name: str) -> None:
         """Should raise if writing frame when not attached."""
         shm = SharedMemoryManager(shm_name)
-        with pytest.raises(RuntimeError, match="Not attached"):
+        with pytest.raises(SharedMemoryError, match="Not attached"):
             shm.set_frame(1)
 
     def test_get_time_ns_not_attached_raises(self, shm_name: str) -> None:
         """Should raise if reading time_ns when not attached."""
         shm = SharedMemoryManager(shm_name)
-        with pytest.raises(RuntimeError, match="Not attached"):
+        with pytest.raises(SharedMemoryError, match="Not attached"):
             shm.get_time_ns()
 
     def test_set_time_ns_not_attached_raises(self, shm_name: str) -> None:
         """Should raise if writing time_ns when not attached."""
         shm = SharedMemoryManager(shm_name)
-        with pytest.raises(RuntimeError, match="Not attached"):
+        with pytest.raises(SharedMemoryError, match="Not attached"):
             shm.set_time_ns(1)
 
     def test_context_manager(self, shm_name: str, test_signals: list[SignalDescriptor]) -> None:

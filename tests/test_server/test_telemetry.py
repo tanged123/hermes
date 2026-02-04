@@ -9,6 +9,7 @@ import pytest
 
 from hermes.backplane.shm import SharedMemoryManager
 from hermes.backplane.signals import SignalDescriptor, SignalType
+from hermes.exceptions import SignalError
 from hermes.server.telemetry import TelemetryEncoder
 
 
@@ -154,10 +155,10 @@ class TestTelemetryEncoderEncode:
         assert values == [pytest.approx(50.0), pytest.approx(30.0), pytest.approx(10.0)]
 
     def test_encode_unknown_signal_raises(self, shm_with_signals: SharedMemoryManager) -> None:
-        """Should raise KeyError for unknown signal."""
+        """Should raise SignalError for unknown signal."""
         encoder = TelemetryEncoder(shm_with_signals, ["nonexistent.signal"])
 
-        with pytest.raises(KeyError, match=r"nonexistent\.signal"):
+        with pytest.raises(SignalError, match=r"nonexistent\.signal"):
             encoder.encode()
 
 

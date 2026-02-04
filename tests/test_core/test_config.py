@@ -16,6 +16,7 @@ from hermes.core.config import (
     SignalConfig,
     WireConfig,
 )
+from hermes.exceptions import ModuleConfigError, WireConfigError
 
 
 class TestModuleType:
@@ -72,12 +73,12 @@ class TestModuleConfig:
 
     def test_process_module_requires_executable(self) -> None:
         """Process modules must have executable."""
-        with pytest.raises(ValueError, match="executable"):
+        with pytest.raises(ModuleConfigError, match="executable"):
             ModuleConfig(type=ModuleType.PROCESS)
 
     def test_script_module_requires_script(self) -> None:
         """Script modules must have script path."""
-        with pytest.raises(ValueError, match="script"):
+        with pytest.raises(ModuleConfigError, match="script"):
             ModuleConfig(type=ModuleType.SCRIPT)
 
     def test_process_module_with_executable(self) -> None:
@@ -92,7 +93,7 @@ class TestModuleConfig:
 
     def test_icarus_module_requires_config(self) -> None:
         """Icarus modules must have config path."""
-        with pytest.raises(ValueError, match="config"):
+        with pytest.raises(ModuleConfigError, match="config"):
             ModuleConfig(type=ModuleType.ICARUS)
 
     def test_icarus_module_with_config(self) -> None:
@@ -106,7 +107,7 @@ class TestWireConfig:
 
     def test_wire_config_requires_qualified_names(self) -> None:
         """Wire src/dst must be qualified (module.signal)."""
-        with pytest.raises(ValueError, match=r"module\.signal"):
+        with pytest.raises(WireConfigError, match=r"module\.signal"):
             WireConfig(src="nope", dst="also_nope")
 
     def test_wire_config_valid(self) -> None:
@@ -188,7 +189,7 @@ class TestHermesConfig:
 
     def test_wire_validation_src_module(self) -> None:
         """Wire source must reference valid module."""
-        with pytest.raises(ValueError, match="source module not found"):
+        with pytest.raises(WireConfigError, match="source module not found"):
             HermesConfig(
                 modules={"test": ModuleConfig(type=ModuleType.SCRIPT, script="./test.py")},
                 wiring=[WireConfig(src="nonexistent.signal", dst="test.signal")],
@@ -196,7 +197,7 @@ class TestHermesConfig:
 
     def test_wire_validation_dst_module(self) -> None:
         """Wire destination must reference valid module."""
-        with pytest.raises(ValueError, match="destination module not found"):
+        with pytest.raises(WireConfigError, match="destination module not found"):
             HermesConfig(
                 modules={"test": ModuleConfig(type=ModuleType.SCRIPT, script="./test.py")},
                 wiring=[WireConfig(src="test.signal", dst="nonexistent.signal")],
@@ -204,7 +205,7 @@ class TestHermesConfig:
 
     def test_schedule_validation(self) -> None:
         """Schedule must reference valid modules."""
-        with pytest.raises(ValueError, match="unknown module"):
+        with pytest.raises(ModuleConfigError, match="unknown module"):
             HermesConfig(
                 modules={"test": ModuleConfig(type=ModuleType.SCRIPT, script="./test.py")},
                 execution=ExecutionConfig(schedule=["nonexistent"]),

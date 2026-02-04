@@ -17,6 +17,8 @@ import contextlib
 
 import posix_ipc
 
+from hermes.exceptions import SemaphoreError
+
 
 class FrameBarrier:
     """Synchronization barrier for frame execution.
@@ -49,10 +51,10 @@ class FrameBarrier:
             count: Number of module processes to synchronize
 
         Raises:
-            ValueError: If count is less than 1
+            SemaphoreError: If count is less than 1
         """
         if count < 1:
-            raise ValueError(f"FrameBarrier count must be at least 1, got {count}")
+            raise SemaphoreError(f"FrameBarrier count must be at least 1, got {count}")
         self._name = name
         self._count = count
         self._step_sem: posix_ipc.Semaphore | None = None
@@ -72,11 +74,11 @@ class FrameBarrier:
         """Create barrier semaphores.
 
         Raises:
-            RuntimeError: If already created
+            SemaphoreError: If already created
             posix_ipc.ExistentialError: If semaphores already exist
         """
         if self._step_sem is not None:
-            raise RuntimeError("Barrier already created")
+            raise SemaphoreError("Barrier already created")
 
         # Create semaphores with initial value 0
         self._step_sem = posix_ipc.Semaphore(
@@ -102,11 +104,11 @@ class FrameBarrier:
         """Attach to existing barrier semaphores.
 
         Raises:
-            RuntimeError: If already attached
+            SemaphoreError: If already attached
             posix_ipc.ExistentialError: If semaphores don't exist
         """
         if self._step_sem is not None:
-            raise RuntimeError("Already attached to barrier")
+            raise SemaphoreError("Already attached to barrier")
 
         self._step_sem = posix_ipc.Semaphore(f"{self._name}_step")
         try:
@@ -124,7 +126,7 @@ class FrameBarrier:
         can proceed.
         """
         if self._step_sem is None:
-            raise RuntimeError("Barrier not created/attached")
+            raise SemaphoreError("Barrier not created/attached")
 
         for _ in range(self._count):
             self._step_sem.release()
@@ -139,7 +141,7 @@ class FrameBarrier:
             True if signaled, False if timeout
         """
         if self._step_sem is None:
-            raise RuntimeError("Barrier not created/attached")
+            raise SemaphoreError("Barrier not created/attached")
 
         try:
             self._step_sem.acquire(timeout)
@@ -150,7 +152,7 @@ class FrameBarrier:
     def signal_done(self) -> None:
         """Module: signal that step execution is complete."""
         if self._done_sem is None:
-            raise RuntimeError("Barrier not created/attached")
+            raise SemaphoreError("Barrier not created/attached")
 
         self._done_sem.release()
 
@@ -164,7 +166,7 @@ class FrameBarrier:
             True if all done, False if any timeout
         """
         if self._done_sem is None:
-            raise RuntimeError("Barrier not created/attached")
+            raise SemaphoreError("Barrier not created/attached")
 
         for _ in range(self._count):
             try:
