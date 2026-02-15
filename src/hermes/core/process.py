@@ -615,6 +615,38 @@ class ProcessManager:
             if name in self._inproc_modules:
                 self._inproc_modules[name].step(major_dt)
 
+    def reset_all(self) -> None:
+        """Reset all modules to initial state and re-stage them.
+
+        Calls reset() on each inproc module, which restores initial
+        conditions and resets signal values. Modules are then re-staged
+        so they are ready for execution.
+
+        Raises:
+            ProcessError: If subprocess modules are present, since they
+                cannot be reset without pipe IPC (not yet implemented).
+        """
+        if self._modules:
+            subprocess_names = list(self._modules.keys())
+            raise ProcessError(
+                f"Cannot reset subprocess modules {subprocess_names}: "
+                "named-pipe IPC not yet implemented. "
+                "Reset is only supported for inproc/icarus modules."
+            )
+
+        # Reset in reverse execution order (mirrors terminate_all)
+        for name in reversed(self._config.get_module_names()):
+            if name in self._inproc_modules:
+                self._inproc_modules[name].reset()
+                log.debug("Inproc module reset", module=name)
+
+        # Re-stage in execution order (mirrors stage_all)
+        for name in self._config.get_module_names():
+            if name in self._inproc_modules:
+                self._inproc_modules[name].stage()
+
+        log.info("All modules reset and re-staged")
+
     def update_time(self, frame: int, time_ns: int) -> None:
         """Update frame number and simulation time in shared memory.
 
