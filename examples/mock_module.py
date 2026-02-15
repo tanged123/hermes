@@ -65,6 +65,10 @@ def main() -> int:
         while True:
             # Wait for step signal from scheduler
             if not barrier.wait_step(timeout=5.0):
+                # TODO(robustness): Replace this timeout-exit behavior with a resilient
+                # pause-aware wait strategy and explicit shutdown signaling from Hermes.
+                # Current behavior can kill the module during extended pauses, which later
+                # causes scheduler step timeouts on resume/reset.
                 print(f"[{module_name}] Timeout waiting for step")
                 break
 
