@@ -69,6 +69,7 @@ class Scheduler:
         self._dt_ns: int = config.get_dt_ns()  # Major frame timestep in ns
         self._running: bool = False
         self._paused: bool = False
+        self._needs_wall_rebase: bool = False
         self._router: WireRouter | None = None
 
         # Pre-compute per-module substep counts and dt values
@@ -223,10 +224,12 @@ class Scheduler:
     def reset(self) -> None:
         """Reset simulation to initial state.
 
-        Resets frame and time counters. Note: does not re-stage modules.
+        Resets frame and time counters and flags wall_start for rebasing
+        so realtime pacing resumes correctly. Does not re-stage modules.
         """
         self._frame = 0
         self._time_ns = 0
+        self._needs_wall_rebase = True
         self._pm.update_time(self._frame, self._time_ns)
         log.info("Simulation reset")
 
@@ -278,6 +281,12 @@ class Scheduler:
                     pause_duration = time.perf_counter() - pause_start
                     wall_start += pause_duration
                     pause_start = None
+
+                # After reset(), rebase wall_start so realtime pacing
+                # starts from now instead of the original run() start.
+                if self._needs_wall_rebase:
+                    wall_start = time.perf_counter()
+                    self._needs_wall_rebase = False
 
                 # Single frame mode waits for explicit step()
                 if self._config.mode == ExecutionMode.SINGLE_FRAME:

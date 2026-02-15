@@ -154,6 +154,17 @@ class TestSchedulerReset:
         assert scheduler.time == 0.0
         assert scheduler.time_ns == 0
 
+    def test_reset_sets_wall_rebase_flag(
+        self, mock_process_manager: MagicMock, default_config: ExecutionConfig
+    ) -> None:
+        """reset() should flag wall_start for rebasing."""
+        scheduler = Scheduler(mock_process_manager, default_config)
+        assert scheduler._needs_wall_rebase is False
+
+        scheduler.reset()
+
+        assert scheduler._needs_wall_rebase is True
+
 
 class TestSchedulerPauseResume:
     """Tests for pause/resume functionality."""
@@ -241,6 +252,50 @@ class TestSchedulerRun:
 
         assert scheduler.frame >= 10
         assert scheduler.running is False
+
+
+class TestSchedulerResetRealtime:
+    """Tests for reset() during realtime run loop."""
+
+    @pytest.mark.asyncio
+    async def test_reset_rebases_wall_start(self, mock_process_manager: MagicMock) -> None:
+        """After reset during realtime run, pacing should resume from now.
+
+        Regression test: without wall_start rebase, sim_time resets to 0
+        but wall_start stays at the original run() time, causing
+        target_wall to be in the past and sleep_time to be negative.
+        The loop then runs AFAP until sim_time catches up.
+        """
+        config = ExecutionConfig(
+            mode=ExecutionMode.REALTIME,
+            rate_hz=100.0,
+            end_time=None,
+        )
+        scheduler = Scheduler(mock_process_manager, config)
+
+        frames_after_reset: list[int] = []
+        reset_done = False
+
+        async def callback(frame: int, _time: float) -> None:
+            nonlocal reset_done
+            # After 5 frames, reset the scheduler
+            if frame >= 5 and not reset_done:
+                scheduler.reset()
+                reset_done = True
+                return
+            # Collect frames after reset
+            if reset_done:
+                frames_after_reset.append(frame)
+                # Stop after collecting a few post-reset frames
+                if len(frames_after_reset) >= 3:
+                    scheduler.stop()
+
+        await scheduler.run(callback=callback)
+
+        # After reset, frames restart from 1 (reset zeroed, then step incremented)
+        assert frames_after_reset[0] == 1
+        # The rebase flag should have been consumed
+        assert scheduler._needs_wall_rebase is False
 
 
 class TestSchedulerDeterminism:
