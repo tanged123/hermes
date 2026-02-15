@@ -621,13 +621,29 @@ class ProcessManager:
         Calls reset() on each inproc module, which restores initial
         conditions and resets signal values. Modules are then re-staged
         so they are ready for execution.
-        """
-        for name, inproc in self._inproc_modules.items():
-            inproc.reset()
-            log.debug("Inproc module reset", module=name)
 
-        for inproc in self._inproc_modules.values():
-            inproc.stage()
+        Raises:
+            ProcessError: If subprocess modules are present, since they
+                cannot be reset without pipe IPC (not yet implemented).
+        """
+        if self._modules:
+            subprocess_names = list(self._modules.keys())
+            raise ProcessError(
+                f"Cannot reset subprocess modules {subprocess_names}: "
+                "named-pipe IPC not yet implemented. "
+                "Reset is only supported for inproc/icarus modules."
+            )
+
+        # Reset in reverse execution order (mirrors terminate_all)
+        for name in reversed(self._config.get_module_names()):
+            if name in self._inproc_modules:
+                self._inproc_modules[name].reset()
+                log.debug("Inproc module reset", module=name)
+
+        # Re-stage in execution order (mirrors stage_all)
+        for name in self._config.get_module_names():
+            if name in self._inproc_modules:
+                self._inproc_modules[name].stage()
 
         log.info("All modules reset and re-staged")
 

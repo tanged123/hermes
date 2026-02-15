@@ -513,10 +513,12 @@ class TestProcessManager:
         try:
             pm.initialize()
 
-            # Inject a mock inproc module
-            inproc = InprocModule(name="test_inproc", instance=mock_instance)
+            # Replace the subprocess module with a mock inproc module
+            # using the same name so it appears in config.get_module_names().
+            pm._modules.clear()
+            inproc = InprocModule(name="test_module", instance=mock_instance)
             inproc._state = ModuleState.RUNNING
-            pm._inproc_modules["test_inproc"] = inproc
+            pm._inproc_modules["test_module"] = inproc
 
             pm.reset_all()
 
@@ -524,6 +526,20 @@ class TestProcessManager:
             mock_instance.reset.assert_called_once()
             mock_instance.stage.assert_called_once()
             assert inproc.state == ModuleState.STAGED
+        finally:
+            pm.terminate_all()
+
+    def test_reset_all_raises_with_subprocess_modules(self, minimal_config: HermesConfig) -> None:
+        """reset_all() should raise ProcessError if subprocess modules exist."""
+        pm = ProcessManager(minimal_config)
+        try:
+            pm.initialize()
+
+            # minimal_config has a script module, so subprocess modules exist
+            assert len(pm._modules) > 0
+
+            with pytest.raises(ProcessError, match="Cannot reset subprocess modules"):
+                pm.reset_all()
         finally:
             pm.terminate_all()
 
