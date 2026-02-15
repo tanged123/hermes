@@ -615,6 +615,22 @@ class ProcessManager:
             if name in self._inproc_modules:
                 self._inproc_modules[name].step(major_dt)
 
+    def reset_all(self) -> None:
+        """Reset all modules to initial state and re-stage them.
+
+        Calls reset() on each inproc module, which restores initial
+        conditions and resets signal values. Modules are then re-staged
+        so they are ready for execution.
+        """
+        for name, inproc in self._inproc_modules.items():
+            inproc.reset()
+            log.debug("Inproc module reset", module=name)
+
+        for inproc in self._inproc_modules.values():
+            inproc.stage()
+
+        log.info("All modules reset and re-staged")
+
     def update_time(self, frame: int, time_ns: int) -> None:
         """Update frame number and simulation time in shared memory.
 

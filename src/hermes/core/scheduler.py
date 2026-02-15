@@ -224,12 +224,14 @@ class Scheduler:
     def reset(self) -> None:
         """Reset simulation to initial state.
 
-        Resets frame and time counters and flags wall_start for rebasing
-        so realtime pacing resumes correctly. Does not re-stage modules.
+        Resets frame/time counters, flags wall_start for rebasing so
+        realtime pacing resumes correctly, and resets all modules to
+        their initial conditions (restoring signal values).
         """
         self._frame = 0
         self._time_ns = 0
         self._needs_wall_rebase = True
+        self._pm.reset_all()
         self._pm.update_time(self._frame, self._time_ns)
         log.info("Simulation reset")
 

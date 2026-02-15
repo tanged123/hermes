@@ -11,7 +11,13 @@ from unittest.mock import MagicMock
 import pytest
 
 from hermes.core.config import HermesConfig, ModuleConfig, ModuleType, SignalConfig
-from hermes.core.process import ModuleInfo, ModuleProcess, ModuleState, ProcessManager
+from hermes.core.process import (
+    InprocModule,
+    ModuleInfo,
+    ModuleProcess,
+    ModuleState,
+    ProcessManager,
+)
 from hermes.exceptions import ModuleConfigError, ModuleError, ProcessError
 
 
@@ -493,6 +499,33 @@ class TestProcessManager:
 
         assert pm._shm is None
         assert pm._barrier is None
+
+    def test_reset_all_resets_and_restages_inproc_modules(
+        self, minimal_config: HermesConfig
+    ) -> None:
+        """reset_all() should reset and re-stage all inproc modules."""
+        mock_instance = MagicMock()
+        mock_instance.stage = MagicMock()
+        mock_instance.step = MagicMock()
+        mock_instance.reset = MagicMock()
+
+        pm = ProcessManager(minimal_config)
+        try:
+            pm.initialize()
+
+            # Inject a mock inproc module
+            inproc = InprocModule(name="test_inproc", instance=mock_instance)
+            inproc._state = ModuleState.RUNNING
+            pm._inproc_modules["test_inproc"] = inproc
+
+            pm.reset_all()
+
+            # Should have called reset then stage on the instance
+            mock_instance.reset.assert_called_once()
+            mock_instance.stage.assert_called_once()
+            assert inproc.state == ModuleState.STAGED
+        finally:
+            pm.terminate_all()
 
 
 class TestProcessManagerWithRealModule:

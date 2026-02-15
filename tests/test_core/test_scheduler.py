@@ -165,6 +165,17 @@ class TestSchedulerReset:
 
         assert scheduler._needs_wall_rebase is True
 
+    def test_reset_calls_reset_all_on_process_manager(
+        self, mock_process_manager: MagicMock, default_config: ExecutionConfig
+    ) -> None:
+        """reset() should reset all modules via ProcessManager."""
+        mock_process_manager.reset_all = MagicMock()
+        scheduler = Scheduler(mock_process_manager, default_config)
+
+        scheduler.reset()
+
+        mock_process_manager.reset_all.assert_called_once()
+
 
 class TestSchedulerPauseResume:
     """Tests for pause/resume functionality."""
