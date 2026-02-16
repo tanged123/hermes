@@ -24,7 +24,7 @@ import sys
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import structlog
 
@@ -306,6 +306,15 @@ class InprocModule:
         """Reset the in-process module."""
         self._instance.reset()
         self._state = ModuleState.INIT
+
+    def introspect(self) -> dict[str, Any] | None:
+        """Return module introspection payload if the instance supports it."""
+        introspect = getattr(self._instance, "introspect", None)
+        if callable(introspect):
+            result = introspect()
+            if isinstance(result, dict):
+                return result
+        return None
 
     def terminate(self) -> None:
         """Terminate the in-process module (no-op for inproc)."""
@@ -687,6 +696,13 @@ class ProcessManager:
     def get_inproc_module(self, name: str) -> InprocModule | None:
         """Get an in-process module by name."""
         return self._inproc_modules.get(name)
+
+    def get_module_instance(self, name: str) -> InprocModuleProtocol | None:
+        """Get module instance by name for in-process modules."""
+        inproc = self._inproc_modules.get(name)
+        if inproc is None:
+            return None
+        return inproc.instance
 
     def __enter__(self) -> ProcessManager:
         """Context manager entry - initialize resources."""

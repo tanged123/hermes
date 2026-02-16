@@ -8,7 +8,7 @@ so that all ~90 Icarus signals can be included in the shared memory layout.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import structlog
 
@@ -202,3 +202,38 @@ class IcarusModule:
                 self._shm.set_signal(f"{self._prefix}.{sig_name}", val)
 
         log.debug("Icarus module reset", module=self._name)
+
+    def introspect(self) -> dict[str, Any]:
+        """Return Icarus internal component topology and metadata."""
+        schema = cast(dict[str, Any], self._sim.schema_json)
+        components = cast(list[dict[str, Any]], schema.get("components", []))
+
+        internal_wiring: list[dict[str, str]] = []
+        for comp in components:
+            inputs = cast(list[dict[str, Any]], comp.get("inputs", []))
+            for inp in inputs:
+                wired_to = inp.get("wired_to")
+                if isinstance(wired_to, str) and wired_to:
+                    dst = inp.get("name")
+                    if isinstance(dst, str):
+                        internal_wiring.append({"src": wired_to, "dst": dst})
+
+        summary = cast(dict[str, Any], schema.get("summary", {})).copy()
+        summary["total_components"] = len(components)
+
+        return {
+            "module_type": "icarus",
+            "components": components,
+            "internal_wiring": internal_wiring,
+            "execution_order": self._get_execution_order(components),
+            "summary": summary,
+        }
+
+    def _get_execution_order(self, components: list[dict[str, Any]]) -> list[str]:
+        """Get component execution order from schema component order."""
+        execution_order: list[str] = []
+        for comp in components:
+            name = comp.get("name")
+            if isinstance(name, str):
+                execution_order.append(name)
+        return execution_order

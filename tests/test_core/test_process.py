@@ -355,6 +355,37 @@ class TestModuleProcess:
             module._start_executable()
 
 
+class TestInprocModule:
+    """Tests for InprocModule wrapper."""
+
+    def test_introspect_passthrough(self) -> None:
+        """Should return introspection payload from wrapped instance."""
+        mock_instance = MagicMock()
+        mock_instance.stage = MagicMock()
+        mock_instance.step = MagicMock()
+        mock_instance.reset = MagicMock()
+        mock_instance.introspect = MagicMock(return_value={"components": [{"name": "internal"}]})
+
+        module = InprocModule(name="test", instance=mock_instance)
+        assert module.introspect() == {"components": [{"name": "internal"}]}
+
+    def test_introspect_unsupported_returns_none(self) -> None:
+        """Should return None when wrapped instance has no introspection."""
+
+        class NoIntrospection:
+            def stage(self) -> None:
+                return None
+
+            def step(self, dt: float) -> None:
+                del dt
+
+            def reset(self) -> None:
+                return None
+
+        module = InprocModule(name="test", instance=NoIntrospection())
+        assert module.introspect() is None
+
+
 class TestProcessManager:
     """Tests for ProcessManager class."""
 
@@ -410,6 +441,18 @@ class TestProcessManager:
             assert pm.get_module("nonexistent") is None
         finally:
             pm.terminate_all()
+
+    def test_get_module_instance_for_inproc_module(self, minimal_config: HermesConfig) -> None:
+        """Should return wrapped instance for inproc modules."""
+        pm = ProcessManager(minimal_config)
+        mock_instance = MagicMock()
+        mock_instance.stage = MagicMock()
+        mock_instance.step = MagicMock()
+        mock_instance.reset = MagicMock()
+        pm._inproc_modules["inproc_test"] = InprocModule(name="inproc_test", instance=mock_instance)
+
+        assert pm.get_module_instance("inproc_test") is mock_instance
+        assert pm.get_module_instance("missing") is None
 
     def test_step_all_without_init_raises(self, minimal_config: HermesConfig) -> None:
         """Should raise if stepping before initialization."""
