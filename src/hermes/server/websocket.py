@@ -318,11 +318,7 @@ class HermesServer:
 
         modules: dict[str, dict[str, Any]] = {}
         for sig_name in signals:
-            if "." in sig_name:
-                module, signal = sig_name.rsplit(".", 1)
-            else:
-                module = "_default"
-                signal = sig_name
+            module, signal = self._split_signal_for_basic_schema(sig_name)
 
             if module not in modules:
                 modules[module] = {"signals": []}
@@ -499,8 +495,17 @@ class HermesServer:
                 or self._pm.get_inproc_module(module_name) is not None
             )
 
-        prefix = f"{module_name}."
-        return any(sig.startswith(prefix) or sig == module_name for sig in self._shm.signal_names())
+        return any(
+            self._split_signal_for_basic_schema(sig_name)[0] == module_name
+            for sig_name in self._shm.signal_names()
+        )
+
+    def _split_signal_for_basic_schema(self, signal_name: str) -> tuple[str, str]:
+        """Split a signal name into (module, local_signal) using basic-schema grouping rules."""
+        if "." in signal_name:
+            module, signal = signal_name.rsplit(".", 1)
+            return module, signal
+        return "_default", signal_name
 
     def _get_module_type(self, module_name: str) -> str | None:
         """Get module type string for a module if available."""

@@ -550,6 +550,35 @@ class TestHermesServerSignalsWithoutDots:
         finally:
             await server.stop()
 
+    @pytest.mark.asyncio
+    async def test_introspect_default_module_is_not_unknown(
+        self, shm_with_simple_signals: SharedMemoryManager
+    ) -> None:
+        """Advertised _default module should not fail existence checks."""
+        config = ServerConfig(host="127.0.0.1", port=0)
+        server = HermesServer(shm_with_simple_signals, config=config)
+        await server.start_background()
+
+        try:
+            assert server._server is not None
+            port = server._server.sockets[0].getsockname()[1]
+
+            async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+                await asyncio.wait_for(ws.recv(), timeout=2.0)  # schema
+
+                await ws.send(
+                    json.dumps({"action": "introspect", "params": {"module": "_default"}})
+                )
+                response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                data = json.loads(response)
+
+                assert data["type"] == "error"
+                assert "does not support introspection" in data["message"]
+                assert "Unknown module: _default" not in data["message"]
+
+        finally:
+            await server.stop()
+
 
 class TestHermesServerIntrospection:
     """Tests for module introspection protocol support."""
