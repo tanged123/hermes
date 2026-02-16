@@ -46,6 +46,7 @@ from hermes.server.telemetry import TelemetryEncoder
 if TYPE_CHECKING:
     from hermes.backplane.shm import SharedMemoryManager
     from hermes.core.config import HermesConfig
+    from hermes.core.process import ProcessManager
     from hermes.core.scheduler import Scheduler
 
 
@@ -102,6 +103,7 @@ class HermesServer:
         scheduler: Scheduler | None = None,
         config: ServerConfig | None = None,
         hermes_config: HermesConfig | None = None,
+        process_mgr: ProcessManager | None = None,
     ) -> None:
         """Initialize the Hermes server.
 
@@ -110,11 +112,13 @@ class HermesServer:
             scheduler: Optional scheduler for control commands
             config: Server configuration
             hermes_config: Full Hermes config for schema metadata (wiring, signal info)
+            process_mgr: Optional process manager for module introspection
         """
         self._shm = shm
         self._scheduler = scheduler
         self._config = config or ServerConfig()
         self._hermes_config = hermes_config
+        self._pm = process_mgr
 
         self._clients: dict[ServerConnection, ClientState] = {}
         self._server: Server | None = None
@@ -138,6 +142,7 @@ class HermesServer:
     def _register_default_handlers(self) -> None:
         """Register default command handlers."""
         self._handlers["subscribe"] = self._handle_subscribe
+        self._handlers["introspect"] = self._handle_introspect
 
         # Control commands require scheduler
         self._handlers["pause"] = self._handle_pause
@@ -280,7 +285,18 @@ class HermesServer:
                         entry["writable"] = True
                     sig_list.append(entry)
 
-            modules[mod_name] = {"signals": sig_list}
+            module_entry: dict[str, Any] = {
+                "signals": sig_list,
+                "module_type": mod_config.type.value,
+            }
+            introspection = self._get_module_introspection(mod_name)
+            if introspection is not None:
+                module_entry["supports_introspection"] = True
+                components = introspection.get("components", [])
+                if isinstance(components, list):
+                    module_entry["component_count"] = len(components)
+
+            modules[mod_name] = module_entry
 
         wiring: list[dict[str, Any]] = []
         for wire in self._hermes_config.wiring:
@@ -361,6 +377,30 @@ class HermesServer:
         )
 
         return make_ack("subscribe", {"count": len(expanded), "signals": expanded})
+
+    async def _handle_introspect(self, _client: ClientState, cmd: Command) -> ServerMessage | None:
+        """Handle introspect command."""
+        module_name = cmd.params.get("module")
+        if not isinstance(module_name, str) or not module_name:
+            return make_error("Missing 'module' parameter")
+
+        if not self._module_exists(module_name):
+            return make_error(f"Unknown module: {module_name}")
+
+        introspection = self._get_module_introspection(module_name)
+        if introspection is None:
+            module_type = self._get_module_type(module_name) or "unknown"
+            return make_error(
+                f"Module '{module_name}' does not support introspection (type: {module_type})"
+            )
+
+        payload = {"module": module_name, **introspection}
+        if "module_type" not in payload:
+            module_type_hint = self._get_module_type(module_name)
+            if module_type_hint is not None:
+                payload["module_type"] = module_type_hint
+
+        return make_ack("introspect", payload)
 
     async def _handle_pause(self, _client: ClientState, _cmd: Command) -> ServerMessage | None:
         """Handle pause command."""
@@ -447,6 +487,49 @@ class HermesServer:
         """Broadcast state change event to all clients."""
         msg = make_event(event)
         await self._broadcast_json(msg.to_json())
+
+    def _module_exists(self, module_name: str) -> bool:
+        """Check if module name is known from config, process manager, or shm signals."""
+        if self._hermes_config is not None:
+            return module_name in self._hermes_config.modules
+
+        if self._pm is not None:
+            return (
+                self._pm.get_module(module_name) is not None
+                or self._pm.get_inproc_module(module_name) is not None
+            )
+
+        prefix = f"{module_name}."
+        return any(sig.startswith(prefix) or sig == module_name for sig in self._shm.signal_names())
+
+    def _get_module_type(self, module_name: str) -> str | None:
+        """Get module type string for a module if available."""
+        if self._hermes_config is None:
+            return None
+
+        mod_config = self._hermes_config.modules.get(module_name)
+        if mod_config is None:
+            return None
+        return mod_config.type.value
+
+    def _get_module_introspection(self, module_name: str) -> dict[str, Any] | None:
+        """Get module introspection payload for supported in-process modules."""
+        if self._pm is None:
+            return None
+
+        module = self._pm.get_inproc_module(module_name)
+        if module is None:
+            return None
+
+        try:
+            return module.introspect()
+        except Exception as exc:
+            log.warning(
+                "Module introspection failed",
+                module=module_name,
+                error=str(exc),
+            )
+            return None
 
     async def _broadcast_json(self, json_str: str) -> None:
         """Broadcast JSON message to all clients."""

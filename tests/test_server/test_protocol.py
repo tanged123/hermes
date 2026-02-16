@@ -58,6 +58,7 @@ class TestCommandAction:
         assert CommandAction.STEP.value == "step"
         assert CommandAction.SET.value == "set"
         assert CommandAction.SUBSCRIBE.value == "subscribe"
+        assert CommandAction.INTROSPECT.value == "introspect"
 
 
 class TestServerMessage:
@@ -169,7 +170,7 @@ class TestCommand:
 
     def test_validate_known_action(self) -> None:
         """Should validate known action without error."""
-        for action in ["pause", "resume", "reset", "step", "set", "subscribe"]:
+        for action in ["pause", "resume", "reset", "step", "set", "subscribe", "introspect"]:
             cmd = Command(action=action, params={})
             # set and subscribe require params, so skip validation for them
             if action not in ("set", "subscribe"):

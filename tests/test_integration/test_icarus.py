@@ -130,3 +130,23 @@ class TestIcarusLifecycle:
         alt_after_reset = shm_with_icarus.get_signal("rocket.Rocket.Vehicle.position_lla.alt")
         # Should be back near initial altitude (0 m)
         assert abs(alt_after_reset) < abs(alt_after_step)
+
+
+class TestIcarusIntrospection:
+    """Test Icarus introspection payload exposed to Hermes."""
+
+    def test_introspect_returns_component_graph(self, icarus_module: IcarusModule) -> None:
+        data = icarus_module.introspect()
+
+        assert data["module_type"] == "icarus"
+        assert isinstance(data["components"], list)
+        assert len(data["components"]) > 0
+        assert isinstance(data["execution_order"], list)
+        assert len(data["execution_order"]) > 0
+        assert isinstance(data["internal_wiring"], list)
+        assert data["summary"]["total_components"] == len(data["components"])
+
+    def test_introspect_contains_expected_component(self, icarus_module: IcarusModule) -> None:
+        data = icarus_module.introspect()
+        component_names = {component["name"] for component in data["components"]}
+        assert "Rocket.Engine" in component_names

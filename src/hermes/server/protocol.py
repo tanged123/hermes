@@ -51,6 +51,7 @@ class CommandAction(str, Enum):
     STEP = "step"
     SET = "set"
     SUBSCRIBE = "subscribe"
+    INTROSPECT = "introspect"
 
 
 @dataclass
@@ -79,7 +80,7 @@ class Command:
     """Command received from client.
 
     Attributes:
-        action: Command action (pause, resume, reset, step, set, subscribe)
+        action: Command action (pause, resume, reset, step, set, subscribe, introspect)
         params: Action-specific parameters
     """
 

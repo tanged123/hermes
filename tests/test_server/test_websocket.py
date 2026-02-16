@@ -5,12 +5,16 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import websockets
 
 from hermes.backplane.shm import SharedMemoryManager
 from hermes.backplane.signals import SignalDescriptor, SignalType
+from hermes.core.config import HermesConfig, ModuleConfig, ModuleType, SignalConfig
+from hermes.server.protocol import Command
 from hermes.server.telemetry import TelemetryEncoder
 from hermes.server.websocket import (
     ClientState,
@@ -545,3 +549,164 @@ class TestHermesServerSignalsWithoutDots:
 
         finally:
             await server.stop()
+
+
+class TestHermesServerIntrospection:
+    """Tests for module introspection protocol support."""
+
+    @pytest.fixture
+    def hermes_config_for_introspection(self) -> HermesConfig:
+        """Config with one introspectable inproc module and one script module."""
+        return HermesConfig(
+            modules={
+                "sensor": ModuleConfig(
+                    type=ModuleType.INPROC,
+                    inproc_module="hermes.modules.injection",
+                    signals=[
+                        SignalConfig(name="x"),
+                        SignalConfig(name="y"),
+                    ],
+                ),
+                "controller": ModuleConfig(
+                    type=ModuleType.SCRIPT,
+                    script=Path("./controller.py"),
+                    signals=[
+                        SignalConfig(name="output"),
+                    ],
+                ),
+            }
+        )
+
+    def test_build_rich_schema_includes_introspection_hints(
+        self,
+        shm_with_signals: SharedMemoryManager,
+        hermes_config_for_introspection: HermesConfig,
+    ) -> None:
+        """Rich schema should include module type and introspection hints."""
+
+        class FakeProcessManager:
+            def get_inproc_module(self, name: str) -> object | None:
+                if name == "sensor":
+                    return SimpleNamespace(
+                        introspect=lambda: {
+                            "module_type": "inproc",
+                            "components": [
+                                {"name": "sensor.component", "type": "Internal"},
+                            ],
+                        }
+                    )
+                return None
+
+            def get_module(self, _name: str) -> object | None:
+                return None
+
+        server = HermesServer(
+            shm_with_signals,
+            config=ServerConfig(host="127.0.0.1", port=0),
+            hermes_config=hermes_config_for_introspection,
+            process_mgr=FakeProcessManager(),  # type: ignore[arg-type]
+        )
+
+        schema = server._build_rich_schema()
+        sensor = schema["modules"]["sensor"]
+        controller = schema["modules"]["controller"]
+
+        assert sensor["module_type"] == "inproc"
+        assert sensor["supports_introspection"] is True
+        assert sensor["component_count"] == 1
+        assert controller["module_type"] == "script"
+        assert "supports_introspection" not in controller
+
+    @pytest.mark.asyncio
+    async def test_handle_introspect_success(
+        self,
+        shm_with_signals: SharedMemoryManager,
+        hermes_config_for_introspection: HermesConfig,
+    ) -> None:
+        """Introspect command should return ack payload for supported modules."""
+
+        class FakeProcessManager:
+            def get_inproc_module(self, name: str) -> object | None:
+                if name == "sensor":
+                    return SimpleNamespace(
+                        introspect=lambda: {
+                            "module_type": "inproc",
+                            "components": [{"name": "sensor.component", "type": "Internal"}],
+                            "internal_wiring": [],
+                            "summary": {"total_components": 1},
+                        }
+                    )
+                return None
+
+            def get_module(self, _name: str) -> object | None:
+                return None
+
+        server = HermesServer(
+            shm_with_signals,
+            config=ServerConfig(host="127.0.0.1", port=0),
+            hermes_config=hermes_config_for_introspection,
+            process_mgr=FakeProcessManager(),  # type: ignore[arg-type]
+        )
+
+        response = await server._handle_introspect(
+            ClientState(ws=SimpleNamespace()),
+            Command(action="introspect", params={"module": "sensor"}),
+        )
+        assert response is not None
+
+        data = json.loads(response.to_json())
+        assert data["type"] == "ack"
+        assert data["action"] == "introspect"
+        assert data["module"] == "sensor"
+        assert data["module_type"] == "inproc"
+        assert len(data["components"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_handle_introspect_errors(
+        self,
+        shm_with_signals: SharedMemoryManager,
+        hermes_config_for_introspection: HermesConfig,
+    ) -> None:
+        """Introspect command should return errors for invalid requests."""
+
+        class FakeProcessManager:
+            def get_inproc_module(self, _name: str) -> object | None:
+                return None
+
+            def get_module(self, _name: str) -> object | None:
+                return None
+
+        server = HermesServer(
+            shm_with_signals,
+            config=ServerConfig(host="127.0.0.1", port=0),
+            hermes_config=hermes_config_for_introspection,
+            process_mgr=FakeProcessManager(),  # type: ignore[arg-type]
+        )
+
+        missing = await server._handle_introspect(
+            ClientState(ws=SimpleNamespace()),
+            Command(action="introspect", params={}),
+        )
+        assert missing is not None
+        missing_data = json.loads(missing.to_json())
+        assert missing_data["type"] == "error"
+        assert "Missing 'module' parameter" in missing_data["message"]
+
+        unknown = await server._handle_introspect(
+            ClientState(ws=SimpleNamespace()),
+            Command(action="introspect", params={"module": "unknown"}),
+        )
+        assert unknown is not None
+        unknown_data = json.loads(unknown.to_json())
+        assert unknown_data["type"] == "error"
+        assert "Unknown module: unknown" in unknown_data["message"]
+
+        unsupported = await server._handle_introspect(
+            ClientState(ws=SimpleNamespace()),
+            Command(action="introspect", params={"module": "controller"}),
+        )
+        assert unsupported is not None
+        unsupported_data = json.loads(unsupported.to_json())
+        assert unsupported_data["type"] == "error"
+        assert "does not support introspection" in unsupported_data["message"]
+        assert "(type: script)" in unsupported_data["message"]
