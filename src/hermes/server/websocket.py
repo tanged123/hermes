@@ -295,6 +295,9 @@ class HermesServer:
                 components = introspection.get("components", [])
                 if isinstance(components, list):
                     module_entry["component_count"] = len(components)
+                edges = introspection.get("edges", [])
+                if isinstance(edges, list):
+                    module_entry["edge_count"] = len(edges)
 
             modules[mod_name] = module_entry
 

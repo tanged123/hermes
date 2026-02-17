@@ -144,9 +144,33 @@ class TestIcarusIntrospection:
         assert isinstance(data["execution_order"], list)
         assert len(data["execution_order"]) > 0
         assert isinstance(data["internal_wiring"], list)
+        assert isinstance(data["edges"], list)
+        assert len(data["edges"]) > 0
         assert data["summary"]["total_components"] == len(data["components"])
 
     def test_introspect_contains_expected_component(self, icarus_module: IcarusModule) -> None:
         data = icarus_module.introspect()
         component_names = {component["name"] for component in data["components"]}
         assert "Rocket.Engine" in component_names
+
+    def test_introspect_contains_typed_edges(self, icarus_module: IcarusModule) -> None:
+        data = icarus_module.introspect()
+        edge_kinds = {edge["kind"] for edge in data["edges"]}
+        # Rocket ascent config has both explicit routes and implicit resolve deps
+        assert "route" in edge_kinds
+        assert "resolve" in edge_kinds
+
+    def test_introspect_edges_have_required_fields(self, icarus_module: IcarusModule) -> None:
+        data = icarus_module.introspect()
+        for edge in data["edges"]:
+            assert "source" in edge, f"Edge missing 'source': {edge}"
+            assert "target" in edge, f"Edge missing 'target': {edge}"
+            assert "kind" in edge, f"Edge missing 'kind': {edge}"
+            assert edge["kind"] in ("route", "resolve"), f"Unknown edge kind: {edge['kind']}"
+
+    def test_introspect_internal_wiring_matches_route_edges(
+        self, icarus_module: IcarusModule
+    ) -> None:
+        data = icarus_module.introspect()
+        route_edges = [e for e in data["edges"] if e["kind"] == "route"]
+        assert len(data["internal_wiring"]) == len(route_edges)

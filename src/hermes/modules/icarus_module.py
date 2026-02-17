@@ -204,27 +204,33 @@ class IcarusModule:
         log.debug("Icarus module reset", module=self._name)
 
     def introspect(self) -> dict[str, Any]:
-        """Return Icarus internal component topology and metadata."""
-        schema = cast(dict[str, Any], self._sim.schema_json)
-        components = cast(list[dict[str, Any]], schema.get("components", []))
+        """Return Icarus internal component topology and metadata.
 
+        Uses the Icarus introspection graph API which provides typed edges:
+        - **route**: explicit SignalRouter connections
+        - **resolve**: implicit dependencies via Backplane::resolve()
+        """
+        graph = cast(dict[str, Any], self._sim.introspection_graph)
+        components = cast(list[dict[str, Any]], graph.get("components", []))
+        edges = cast(list[dict[str, Any]], graph.get("edges", []))
+
+        # Backward compat: derive internal_wiring from route edges
         internal_wiring: list[dict[str, str]] = []
-        for comp in components:
-            inputs = cast(list[dict[str, Any]], comp.get("inputs", []))
-            for inp in inputs:
-                wired_to = inp.get("wired_to")
-                if isinstance(wired_to, str) and wired_to:
-                    dst = inp.get("name")
-                    if isinstance(dst, str):
-                        internal_wiring.append({"src": wired_to, "dst": dst})
+        for edge in edges:
+            if edge.get("kind") == "route":
+                src = edge.get("source")
+                dst = edge.get("target")
+                if isinstance(src, str) and isinstance(dst, str):
+                    internal_wiring.append({"src": src, "dst": dst})
 
-        summary = cast(dict[str, Any], schema.get("summary", {})).copy()
+        summary = cast(dict[str, Any], graph.get("summary", {})).copy()
         summary["total_components"] = len(components)
 
         return {
             "module_type": "icarus",
             "components": components,
             "internal_wiring": internal_wiring,
+            "edges": edges,
             "execution_order": self._get_execution_order(components),
             "summary": summary,
         }

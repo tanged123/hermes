@@ -622,6 +622,10 @@ class TestHermesServerIntrospection:
                             "components": [
                                 {"name": "sensor.component", "type": "Internal"},
                             ],
+                            "edges": [
+                                {"source": "a", "target": "b", "kind": "route"},
+                                {"source": "c", "target": "d", "kind": "resolve"},
+                            ],
                         }
                     )
                 return None
@@ -643,6 +647,7 @@ class TestHermesServerIntrospection:
         assert sensor["module_type"] == "inproc"
         assert sensor["supports_introspection"] is True
         assert sensor["component_count"] == 1
+        assert sensor["edge_count"] == 2
         assert controller["module_type"] == "script"
         assert "supports_introspection" not in controller
 
