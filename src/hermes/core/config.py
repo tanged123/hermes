@@ -6,7 +6,7 @@ Configuration is a first-class citizen in Hermes - no recompilation needed.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from hermes.exceptions import ModuleConfigError, WireConfigError
 
 
-class ModuleType(str, Enum):
+class ModuleType(StrEnum):
     """Module execution types."""
 
     PROCESS = "process"  # External executable (C, C++, Rust, etc.)
@@ -24,7 +24,7 @@ class ModuleType(str, Enum):
     ICARUS = "icarus"  # Icarus 6DOF physics engine
 
 
-class ExecutionMode(str, Enum):
+class ExecutionMode(StrEnum):
     """Scheduler execution modes."""
 
     REALTIME = "realtime"  # Paced to wall-clock (HIL, visualization)

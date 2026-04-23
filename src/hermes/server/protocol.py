@@ -18,13 +18,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from hermes.exceptions import ProtocolError
 
 
-class ServerMessageType(str, Enum):
+class ServerMessageType(StrEnum):
     """Types of messages sent from server to client."""
 
     SCHEMA = "schema"  # Signal schema on connect
@@ -33,7 +33,7 @@ class ServerMessageType(str, Enum):
     ACK = "ack"  # Command acknowledgments
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     """Types of state change events."""
 
     RUNNING = "running"
@@ -42,7 +42,7 @@ class EventType(str, Enum):
     STOPPED = "stopped"
 
 
-class CommandAction(str, Enum):
+class CommandAction(StrEnum):
     """Valid command actions from client."""
 
     PAUSE = "pause"

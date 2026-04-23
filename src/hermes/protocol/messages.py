@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 
-class MessageType(str, Enum):
+class MessageType(StrEnum):
     """Control message types."""
 
     # Lifecycle commands
