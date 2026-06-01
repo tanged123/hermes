@@ -27,4 +27,9 @@ jobs:
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: ./build/coverage/coverage.xml
+        # Pin uploader: Codecov's "latest" CDN periodically serves a binary
+        # whose hash disagrees with the signed SHA256SUM manifest, causing
+        # the wrapper's integrity check to fail. Pin to a known-good
+        # version. Bump when a new release is confirmed in sync.
+        version: v11.2.7
         fail_ci_if_error: true
