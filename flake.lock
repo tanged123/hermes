@@ -99,15 +99,16 @@
         "vulcan": "vulcan"
       },
       "locked": {
-        "lastModified": 1776929523,
-        "narHash": "sha256-JvBlZBg38FTF555ammmnEgKzU/6k8gx2Z+Mx0+cG5tc=",
+        "lastModified": 1780294608,
+        "narHash": "sha256-mIIOtSsiscXL985xcam1jzS8MBkHPeaxdi25TV6h4cE=",
         "owner": "tanged123",
         "repo": "icarus",
-        "rev": "a3ea33c2296d449779e73be4c375b1ddade5362d",
+        "rev": "59df2a71601d1af27e479a00976872c5b9b6c32b",
         "type": "github"
       },
       "original": {
         "owner": "tanged123",
+        "ref": "0.6.0",
         "repo": "icarus",
         "type": "github"
       }
@@ -119,15 +120,16 @@
         "treefmt-nix": "treefmt-nix"
       },
       "locked": {
-        "lastModified": 1776915535,
-        "narHash": "sha256-HlUiYXjPpHsvGcxu7B1c4R/oQIp78k/ofgWqq5L5zfk=",
+        "lastModified": 1780293510,
+        "narHash": "sha256-P+quIIoyY4T6/xqLfn8elwdYR/rkCBtoSizSi+aOrOg=",
         "owner": "tanged123",
         "repo": "metis",
-        "rev": "a47c47c3231817b73dc356002c9b841c05d12fee",
+        "rev": "277d87db8b3951bee44aba672c9300fc1ae74364",
         "type": "github"
       },
       "original": {
         "owner": "tanged123",
+        "ref": "2.0.0",
         "repo": "metis",
         "type": "github"
       }
@@ -139,15 +141,16 @@
         "treefmt-nix": "treefmt-nix_3"
       },
       "locked": {
-        "lastModified": 1776915535,
-        "narHash": "sha256-HlUiYXjPpHsvGcxu7B1c4R/oQIp78k/ofgWqq5L5zfk=",
+        "lastModified": 1780293510,
+        "narHash": "sha256-P+quIIoyY4T6/xqLfn8elwdYR/rkCBtoSizSi+aOrOg=",
         "owner": "tanged123",
         "repo": "metis",
-        "rev": "a47c47c3231817b73dc356002c9b841c05d12fee",
+        "rev": "277d87db8b3951bee44aba672c9300fc1ae74364",
         "type": "github"
       },
       "original": {
         "owner": "tanged123",
+        "ref": "2.0.0",
         "repo": "metis",
         "type": "github"
       }
@@ -480,15 +483,16 @@
         "treefmt-nix": "treefmt-nix_4"
       },
       "locked": {
-        "lastModified": 1776923962,
-        "narHash": "sha256-YHxhCcRQbzZl1xJGUIgrYVnIE0qTg9F5vhnKOAY5zBE=",
+        "lastModified": 1780294556,
+        "narHash": "sha256-Ku3Vni/S3dx7+zW0FuopCGmcZQC65/V8NYY0alGW2Vg=",
         "owner": "tanged123",
         "repo": "vulcan",
-        "rev": "435a9d4cf9963a1bf750662e408ea8d958778a7d",
+        "rev": "d6946033f2070adc26a0cf864350b40ef1f5c5e5",
         "type": "github"
       },
       "original": {
         "owner": "tanged123",
+        "ref": "0.4.0",
         "repo": "vulcan",
         "type": "github"
       }

@@ -13,7 +13,7 @@
     treefmt-nix.url = "github:numtide/treefmt-nix";
 
     # Icarus simulation engine (provides Python bindings)
-    icarus.url = "github:tanged123/icarus";
+    icarus.url = "github:tanged123/icarus/0.6.0";
 
     # Use icarus's nixpkgs so Python versions match for withPackages
     nixpkgs.follows = "icarus/nixpkgs";
